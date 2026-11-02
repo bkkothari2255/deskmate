@@ -1,0 +1,288 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Deskmate heroes</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --ink:#182638; --slate:#455B70; --ivory:#E9E4DA; --paper:#F5F2EC; --line:#d9d2c6; }
+  html,body { margin:0; height:100%; background:var(--paper); color:var(--ink); font:13px/1.35 -apple-system, "Segoe UI", system-ui, sans-serif; overflow:hidden; }
+  canvas#view { display:block; width:100%; height:100%; cursor:grab; }
+  #ui { position:fixed; top:12px; left:12px; right:12px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; pointer-events:none; }
+  .bar { pointer-events:auto; display:flex; flex-wrap:wrap; gap:4px; align-items:center; background:rgba(255,255,255,.82); backdrop-filter:blur(8px); border:1px solid var(--line); border-radius:10px; padding:5px 7px; }
+  .bar b { font-weight:600; color:var(--slate); margin:0 4px 0 2px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+  button { font:inherit; border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:7px; padding:3px 8px; cursor:pointer; }
+  button[aria-pressed="true"] { background:var(--ink); color:#fff; border-color:var(--ink); }
+  label { display:flex; gap:4px; align-items:center; }
+  #stats { position:fixed; left:12px; bottom:12px; background:rgba(255,255,255,.82); border:1px solid var(--line); border-radius:10px; padding:6px 9px; font:12px ui-monospace, Menlo, monospace; white-space:pre; }
+  #previewBox { position:fixed; right:12px; bottom:12px; background:rgba(255,255,255,.82); border:1px solid var(--line); border-radius:10px; padding:6px; text-align:center; font-size:11px; color:var(--slate); }
+  #previewBox canvas { display:block; background:linear-gradient(#f3efe8,#e6e0d5); border-radius:8px; margin-bottom:4px; }
+  #names { position:fixed; inset:0; pointer-events:none; }
+  #names div { position:absolute; transform:translate(-50%,-100%); background:#fff; border:1px solid var(--line); border-radius:999px; padding:2px 8px; font-size:12px; white-space:nowrap; display:flex; gap:5px; align-items:center; }
+  #names i { width:8px; height:8px; border-radius:50%; display:inline-block; }
+</style></head>
+<body>
+<canvas id="view"></canvas>
+<div id="names"></div>
+<div id="ui">
+  <div class="bar" id="poses"><b>Pose</b></div>
+  <div class="bar" id="acts"><b>Activity</b></div>
+  <div class="bar">
+    <b>Options</b>
+    <label><input type="checkbox" id="tour"> tour</label>
+    <label><input type="checkbox" id="desks" checked> desks</label>
+    <label><input type="checkbox" id="phones"> headset</label>
+    <label><input type="checkbox" id="mic"> mic</label>
+    <label><input type="checkbox" id="guides"> label heights</label>
+    <label><input type="checkbox" id="spin"> spin</label>
+    <label>tint <input type="color" id="tint" value="#000000" title="black = each hero's signature colour"></label>
+    <label>opacity <input type="range" id="fade" min="0" max="1" step="0.01" value="1" style="width:70px"></label>
+    <button id="hop">hop</button>
+    <button id="reset">reset view</button>
+  </div>
+</div>
+<pre id="stats"></pre>
+<div id="previewBox"><canvas id="prev" width="140" height="180"></canvas><span id="prevName">setup preview</span></div>
+<script type="module">
+// Dev page: every hero, pose and activity side by side.
+// Serve the repo root (python3 -m http.server) and open /test/critters.html
+// Params: ?pose=sit|stand|walk  act=type|idle|eat|drink|raise|wave|talk|listen|cross|celebrate|look
+//         species=titan|nova|bolt|aegis|shade|blaze|frost|gizmo (focus one)  desks=0  tour=1  tint=%23aabbcc
+// Drag to orbit, wheel to zoom, click a hero to focus it (Esc / "reset view" to go back).
+import { THREE, addSoftLights, configureRenderer } from '../extension/lib/avatar.js';
+import { makeCharacter, characterList, PREVIEW_CAMERA } from '../extension/lib/characters.js';
+
+const q = new URLSearchParams(location.search);
+const POSES = ['sit', 'stand', 'walk'];
+const ACTS = ['idle', 'type', 'eat', 'drink', 'raise', 'wave', 'talk', 'listen', 'cross', 'celebrate', 'look'];
+const state = {
+  pose: POSES.includes(q.get('pose')) ? q.get('pose') : 'sit',
+  act: ACTS.includes(q.get('act')) ? q.get('act') : 'type',
+  tint: q.get('tint') || '',
+};
+
+// ---------- renderer + scene (same lights/renderer config as the side panel)
+const canvas = document.getElementById('view');
+const r = new THREE.WebGLRenderer({ canvas, antialias: true });
+r.setPixelRatio(Math.min(devicePixelRatio, 2));
+configureRenderer(r);
+r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#EDE8DF');
+addSoftLights(scene);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshStandardMaterial({ color: '#E3DCCF', roughness: 1 }));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+
+// label-height guides used by desk3d.js (sitting 1.78, standing 1.95)
+const guides = new THREE.Group();
+for (const [y, c] of [[1.78, '#8DA8C2'], [1.95, '#B98B64']]) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(14, 0.006), new THREE.MeshBasicMaterial({ color: c }));
+  m.position.set(0, y, 0.0); guides.add(m);
+}
+guides.visible = false; scene.add(guides);
+
+// ---------- desks + chairs at the same coordinates as desk3d.js
+const mat = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.7, ...o });
+const M = { top: mat('#F4EFE6'), leg: mat('#B98B64'), alu: mat('#D5DAE3', { metalness: 0.3, roughness: 0.4 }), keys: mat('#2B2F38'), seat: mat('#A5BBA9'), metal: mat('#8a94a3', { metalness: 0.5, roughness: 0.4 }), mug: mat('#EFE8DC') };
+function deskSet() {
+  const g = new THREE.Group();
+  const add = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = o.receiveShadow = true; g.add(o); return o; };
+  add(new THREE.BoxGeometry(1.15, 0.05, 0.62), M.top, 0, 0.76, 0.55);
+  for (const x of [-0.52, 0.52]) add(new THREE.BoxGeometry(0.045, 0.72, 0.5), M.leg, x, 0.36, 0.55);
+  add(new THREE.BoxGeometry(0.44, 0.018, 0.28), M.alu, 0, 0.795, 0.34);
+  add(new THREE.BoxGeometry(0.36, 0.004, 0.13), M.keys, 0, 0.806, 0.37);
+  const lid = new THREE.Group(); lid.position.set(0, 0.8, 0.48); lid.rotation.x = 0.22; g.add(lid);
+  const l = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.29, 0.014), M.alu); l.position.y = 0.145; lid.add(l);
+  add(new THREE.CylinderGeometry(0.048, 0.042, 0.1, 32), M.mug, 0.4, 0.835, 0.36);
+  add(new THREE.BoxGeometry(0.5, 0.08, 0.48), M.seat, 0, 0.43, 0);
+  add(new THREE.BoxGeometry(0.48, 0.5, 0.07), M.seat, 0, 0.78, -0.25);
+  add(new THREE.CylinderGeometry(0.03, 0.03, 0.36, 16), M.metal, 0, 0.21, 0);
+  add(new THREE.CylinderGeometry(0.24, 0.24, 0.035, 5), M.metal, 0, 0.03, 0);
+  return g;
+}
+
+// ---------- the roster
+const list = characterList();
+const only = q.get('species');
+const roster = only ? list.filter(c => c.id === only) : list;
+const SPACING = 1.3;
+const slots = roster.map((c, i) => {
+  const x = (i - (roster.length - 1) / 2) * SPACING;
+  const desk = deskSet(); desk.position.x = x; scene.add(desk);
+  return { def: c, x, desk, av: null };
+});
+const names = document.getElementById('names');
+for (const s of slots) {
+  s.tag = document.createElement('div');
+  s.tag.innerHTML = `<i style="background:${s.def.color}"></i>${s.def.name} <span style="color:#8a8f99">${s.def.id}</span>`;
+  names.appendChild(s.tag);
+}
+
+function build() {
+  for (const s of slots) {
+    let keep = null;
+    if (s.av) { keep = s.av; scene.remove(s.av.root); s.av.dispose(); }
+    const color = state.tint && state.tint !== '#000000' ? state.tint : s.def.color;
+    s.av = makeCharacter({ id: 'preview-' + s.def.id, color, avatar: { model: s.def.id } });
+    s.av.root.traverse(o => { if (o.isMesh) o.userData.slot = s; });
+    scene.add(s.av.root);
+    if (keep) s.av.phase = keep.phase;
+  }
+  applyToggles();
+}
+function applyToggles() {
+  const ph = document.getElementById('phones').checked, mic = document.getElementById('mic').checked;
+  for (const s of slots) s.av.setHeadphones(ph || mic, mic);
+  const desks = document.getElementById('desks').checked;
+  for (const s of slots) s.desk.visible = desks && state.pose === 'sit';
+  guides.visible = document.getElementById('guides').checked;
+}
+
+// ---------- UI
+function buttons(id, items, key) {
+  const bar = document.getElementById(id);
+  for (const it of items) {
+    const b = document.createElement('button');
+    b.textContent = it; b.dataset.v = it;
+    b.onclick = () => { state[key] = it; document.getElementById('tour').checked = false; sync(); applyToggles(); };
+    bar.appendChild(b);
+  }
+}
+buttons('poses', POSES, 'pose');
+buttons('acts', ACTS, 'act');
+function sync() {
+  for (const b of document.querySelectorAll('#poses button')) b.setAttribute('aria-pressed', String(b.dataset.v === state.pose));
+  for (const b of document.querySelectorAll('#acts button')) b.setAttribute('aria-pressed', String(b.dataset.v === state.act));
+}
+for (const id of ['desks', 'phones', 'mic', 'guides']) document.getElementById(id).onchange = applyToggles;
+document.getElementById('tint').value = state.tint || '#000000';
+document.getElementById('tint').oninput = (e) => { state.tint = e.target.value; build(); rebuildPreview(); };
+document.getElementById('hop').onclick = () => slots.forEach(s => s.av.hop(1.2));
+document.getElementById('reset').onclick = () => focusOn(null);
+if (q.get('desks') === '0') document.getElementById('desks').checked = false;
+if (q.get('tour')) document.getElementById('tour').checked = true;
+
+// ---------- camera: simple orbit (drag), zoom (wheel), click to focus
+const cam = new THREE.PerspectiveCamera(30, 1, 0.05, 80);
+const orbit = { yaw: 0, pitch: 0.2, dist: 0, target: new THREE.Vector3(), goal: null };
+function focusOn(slot) {
+  if (slot) orbit.goal = { target: new THREE.Vector3(slot.x, state.pose === 'sit' ? 1.0 : 1.05, 0), dist: 2.6, yaw: 0.25, pitch: 0.12, slot };
+  else orbit.goal = { target: new THREE.Vector3(0, 0.85, 0), dist: Math.max(4.5, roster.length * SPACING * 1.25), yaw: 0, pitch: 0.2, slot: null };
+}
+focusOn(only ? slots[0] : null);
+Object.assign(orbit, { target: orbit.goal.target.clone(), dist: orbit.goal.dist, yaw: orbit.goal.yaw, pitch: orbit.goal.pitch });
+let drag = null;
+canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, moved: 0 }; canvas.setPointerCapture(e.pointerId); canvas.style.cursor = 'grabbing'; });
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  drag.moved += Math.abs(dx) + Math.abs(dy); drag.x = e.clientX; drag.y = e.clientY;
+  orbit.goal = null;
+  orbit.yaw -= dx * 0.006; orbit.pitch = Math.min(1.3, Math.max(-0.2, orbit.pitch + dy * 0.005));
+});
+canvas.addEventListener('pointerup', e => {
+  canvas.style.cursor = 'grab';
+  if (drag && drag.moved < 4) {
+    const ndc = new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+    const ray = new THREE.Raycaster(); ray.setFromCamera(ndc, cam);
+    const hit = ray.intersectObjects(slots.map(s => s.av.root), true).find(h => h.object.userData.slot);
+    focusOn(hit ? hit.object.userData.slot : null);
+    if (hit) { selected = hit.object.userData.slot; rebuildPreview(); }
+  }
+  drag = null;
+});
+canvas.addEventListener('wheel', e => { e.preventDefault(); orbit.goal = null; orbit.dist = Math.min(30, Math.max(0.8, orbit.dist * Math.exp(e.deltaY * 0.001))); }, { passive: false });
+addEventListener('keydown', e => { if (e.key === 'Escape') focusOn(null); });
+
+// ---------- setup-screen preview (same canvas size + camera as app.js)
+const pr = new THREE.WebGLRenderer({ canvas: document.getElementById('prev'), antialias: true, alpha: true });
+pr.setPixelRatio(Math.min(devicePixelRatio, 2)); pr.setSize(140, 180, false);
+configureRenderer(pr);
+const psc = new THREE.Scene(); addSoftLights(psc, { shadows: false });
+const pcam = new THREE.PerspectiveCamera(30, 140 / 180, 0.1, 20);
+pcam.position.set(...PREVIEW_CAMERA.pos); pcam.lookAt(...PREVIEW_CAMERA.look);
+let selected = slots[0], pav = null;
+function rebuildPreview() {
+  if (pav) { psc.remove(pav.root); pav.dispose(); }
+  const color = state.tint && state.tint !== '#000000' ? state.tint : selected.def.color;
+  pav = makeCharacter({ id: 'p', color, avatar: { model: selected.def.id } });
+  pav.pose = 'stand'; pav.hop(1);
+  psc.add(pav.root);
+  document.getElementById('prevName').textContent = `setup preview · ${selected.def.name}`;
+}
+
+// ---------- loop
+const stats = document.getElementById('stats');
+const clock = new THREE.Clock();
+let t = 0, frames = 0, fpsT = 0, fps = 0, lastTourStep = -1;
+function resize() {
+  r.setSize(innerWidth, innerHeight, false);
+  cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+const tmp = new THREE.Vector3();
+function loop() {
+  const dt = Math.min(clock.getDelta(), 0.1);
+  t += dt; frames++; fpsT += dt;
+  if (fpsT > 0.5) { fps = frames / fpsT; frames = 0; fpsT = 0; }
+  if (document.getElementById('tour').checked) {
+    const k = Math.floor(t / 3.2);
+    if (k !== lastTourStep) {
+      lastTourStep = k;
+      state.act = ACTS[k % ACTS.length];
+      state.pose = ['sit', 'stand'][Math.floor(k / ACTS.length) % 2];
+      sync(); applyToggles();
+    }
+  }
+  const fade = Number(document.getElementById('fade').value);
+  const spin = document.getElementById('spin').checked;
+  for (const s of slots) {
+    const av = s.av;
+    av.pose = state.pose; av.activity = state.pose === 'walk' ? 'idle' : state.act;
+    av.root.position.set(s.x, 0, state.pose === 'sit' ? -0.05 : 0);
+    av.root.rotation.y = spin ? t * 0.6 : 0;
+    av.setOpacity(fade);
+    av.update(t, dt);
+  }
+  if (pav) {
+    pav.root.rotation.y = Math.sin(t * 0.6) * 0.5;
+    pav.activity = (t % 7) < 2.2 ? 'wave' : 'idle';
+    pav.update(t, dt);
+    pr.render(psc, pcam);
+  }
+  // camera
+  if (orbit.goal) {
+    const k = Math.min(1, dt * 4);
+    orbit.target.lerp(orbit.goal.target, k);
+    orbit.dist += (orbit.goal.dist - orbit.dist) * k;
+    orbit.yaw += (orbit.goal.yaw - orbit.yaw) * k;
+    orbit.pitch += (orbit.goal.pitch - orbit.pitch) * k;
+  }
+  cam.position.set(
+    orbit.target.x + Math.sin(orbit.yaw) * Math.cos(orbit.pitch) * orbit.dist,
+    orbit.target.y + Math.sin(orbit.pitch) * orbit.dist,
+    orbit.target.z + Math.cos(orbit.yaw) * Math.cos(orbit.pitch) * orbit.dist,
+  );
+  cam.lookAt(orbit.target);
+  r.info.autoReset = false; r.info.reset();
+  r.render(scene, cam);
+  // name tags at the same height desk3d.js anchors labels
+  for (const s of slots) {
+    const headY = s.av.pose === 'sit' ? 1.78 : 1.95;
+    tmp.set(s.av.root.position.x, headY + 0.12, s.av.root.position.z).project(cam);
+    s.tag.style.left = ((tmp.x * 0.5 + 0.5) * innerWidth) + 'px';
+    s.tag.style.top = ((-tmp.y * 0.5 + 0.5) * innerHeight) + 'px';
+    s.tag.style.display = tmp.z < 1 ? 'flex' : 'none';
+  }
+  const info = r.info.render;
+  stats.textContent = `${fps.toFixed(0)} fps · ${slots.length} heroes\n` +
+    `draw calls ${info.calls} (incl. shadow pass) · ${(info.triangles / 1000).toFixed(0)}k tris\n` +
+    `pose ${state.pose} · activity ${state.pose === 'walk' ? 'idle (walking)' : state.act}`;
+  requestAnimationFrame(loop);
+}
+sync();
+build();
+rebuildPreview();
+// settle springs before the first frame
+for (let i = 0; i < 90; i++) for (const s of slots) { s.av.pose = state.pose; s.av.activity = state.act; s.av.update(i / 60, 1 / 60); }
+loop();
+window.__ready = true;
+</script>
+</body></html>

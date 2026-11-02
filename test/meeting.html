@@ -1,0 +1,74 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Meeting rooms</title>
+<link rel="stylesheet" href="../extension/lib/ui.css"><style>html,body{margin:0;height:100%;overflow:hidden;background:#EDE8DF}#c{position:fixed;inset:0}#c canvas{display:block;width:100%;height:100%}</style></head>
+<body><div id="c"></div>
+<script type="module">
+window.requestAnimationFrame = (cb) => setTimeout(() => cb(performance.now()), 700);   // headless virtual time doesn't tick rAF
+import { DeskScene } from '../extension/sidepanel/desk3d.js';
+const q = new URLSearchParams(location.search);
+const names = ['Asha', 'Ben', 'Chloe', 'Dev', 'Elif'];
+const colors = ['#7FA3C8', '#8A76C4', '#6E9E78', '#C98B64', '#D96B6B'];
+const models = ['titan', 'nova', 'bolt', 'aegis', 'shade'];
+const n = +(q.get('n') || 4), inMeet = (q.get('meet') || '1,2').split(',').map(Number);
+const scene = new DeskScene(document.getElementById('c'), { dark: q.has('dark') });
+window.scene = scene;
+if (q.has('hour')) scene.debugHour = +q.get('hour');
+if (q.has('weather')) scene.sky.kind = q.get('weather');
+if (q.has('norooms')) scene.rooms.visible = false;
+addEventListener('error', e => document.title += ' ERR:' + e.message);
+setTimeout(() => { const g = scene.renderer.getContext(); document.title += ' gl:' + g.getError() + ' canvas:' + scene.renderer.domElement.width + 'x' + scene.renderer.domElement.height + ' calls:' + scene.renderer.info.render.calls + ' tris:' + scene.renderer.info.render.triangles; }, 3000);
+const snap = (meet) => ({
+  me: { id: 'u0' }, members: Array.from({ length: n }, (_, i) => ({
+    id: 'u' + i, name: names[i % 5], color: colors[i % 5], seat: i, avatar: { model: models[i % 5] },
+    state: meet.includes(i) ? 'meeting' : 'desk',
+  })),
+});
+scene.update(snap([]));
+setTimeout(() => scene.update(snap(inMeet)), 500);
+if (q.has('weather')) setTimeout(() => { scene.sky.kind = q.get('weather'); }, 800);   // after the first update resets it
+scene.onViewDirty = (d) => { document.title += ' dirty=' + d; };
+if (q.has('reset')) setTimeout(() => { scene.zoom = 0.7; scene.onViewDirty(true); scene.viewDirty = true; scene.resetView(); }, 2000);
+if (q.has('ff')) setTimeout(() => { for (const p of scene.people.values()) { const k = +q.get('ff'); for (let i = 0; i < k && p.path.length; i++) p.pos.copy(p.path.shift()); } }, 1500);   // fast-forward the walk (headless time is virtual)
+if (q.has('cover')) setTimeout(() => {   // simulate 10 minutes of vacuuming and report how much of the free floor it reached
+  const L = scene.live, b = scene.platformBounds, A = scene.annex, seen = new Set(), all = new Set();
+  for (let x = b.x0; x < A.x1; x += 0.5) for (let z = b.z0; z < b.z1; z += 0.5) if (L.free(x, z)) all.add(Math.round(x / 0.5) + ',' + Math.round(z / 0.5));
+  let inAnnex = 0, bad = 0;
+  for (let t = 1; t < 600; t += 0.05) { L.update(t, { hour: 12 }); const k = Math.round(L.robot.x / 0.5) + ',' + Math.round(L.robot.z / 0.5); seen.add(k); if (L.robot.x > A.x0 + 0.5) inAnnex++; if (!L.free(L.robot.x, L.robot.z)) bad++; }
+  let hit = 0; for (const k of all) if (seen.has(k)) hit++;
+  document.title += ' COVER ' + hit + '/' + all.size + ' annexSteps=' + inAnnex + ' illegal=' + bad;
+}, 1000);
+if (q.has('click')) {   // simulate hovering + clicking a desk and a meeting room with real pointer events
+  const out = [];
+  scene.onSelect = (id) => out.push('select:' + id);
+  scene.onInteract = (k) => out.push('interact:' + k);
+  const cv = scene.renderer.domElement, V = scene.camera;
+  const at = (x, y, z) => { const v = new scene.camera.position.constructor(x, y, z).project(V), r = cv.getBoundingClientRect(); return [r.left + (v.x * 0.5 + 0.5) * r.width, r.top + (-v.y * 0.5 + 0.5) * r.height]; };
+  const fire = (type, [x, y]) => cv.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, pointerId: 1, button: 0, bubbles: true, pointerType: 'mouse' }));
+  setTimeout(() => {
+    const st = scene.seats[3], mt = scene.meetRooms[0], mt3 = scene.meetRooms[3];
+    const tests = [['desk', at(st.x, 0.78, st.z + 0.5)], ['roomBusy', at(mt.x, 1.0, mt.z + 0.1)], ['roomFree', at(mt3.x, 1.0, mt3.z + 0.1)]];
+    let i = 0;
+    const next = () => {
+      if (i >= tests.length) { document.title += ' CLICKS ' + out.join(','); return; }
+      const [name, pt] = tests[i++];
+      fire('pointermove', pt);
+      setTimeout(() => { out.push(name + ' tip="' + (scene.tip?.textContent || '') + '"'); fire('pointerdown', pt); fire('pointerup', pt); setTimeout(next, 300); }, 400);
+    };
+    next();
+  }, 3500);
+}
+if (q.has('focus')) setTimeout(() => {   // camera close-ups for the README: rooms | annex | desk
+  const f = q.get('focus'), T = scene.target, P = (x, z, zoom, yaw = 0) => { scene.pan.set(x - T.x, 0.5, z - T.z); scene.zoom = zoom; scene.yaw = yaw; };
+  if (f === 'rooms') P(scene.meet.xs[1], scene.meet.z + 0.5, 0.42);
+  if (f === 'annex') P(scene.cafe.group.position.x, scene.cafe.group.position.z, 0.42);
+  if (f === 'desk') { const s3 = scene.seats[1]; P(s3.x, s3.z + 0.3, 0.2); }
+  if (f === 'lamps') P(scene.annex.x0, scene.annex.z0 + 2.5, 0.35);
+}, 2500);
+setTimeout(() => {   // headless Chrome won't capture a transparent WebGL canvas: snapshot it into an <img>
+  const r = scene.renderer; r.render(scene.scene, scene.camera);
+  const img = new Image(); img.src = r.domElement.toDataURL('image/png');
+  img.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;z-index:1;pointer-events:none';
+  document.title += ' hidden=' + document.hidden + ' ' + [...scene.people.values()].map(p => p.av.root.position.z.toFixed(1)).join('/') + ' ' + [...scene.people.values()].map(p => p.member.name + ':' + p.mode + '/' + p.meetSlot + '/' + p.path.length + '@' + p.pos.x.toFixed(1) + ',' + p.pos.z.toFixed(1)).join(' ');
+  document.body.appendChild(img); window.__ready = true;
+}, +(q.get('wait') || 14000));
+</script></body></html>

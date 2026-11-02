@@ -9,7 +9,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import WebSocket from 'ws';
 import { readMacFocus } from './macfocus.js';
 import { DeskClient, newId } from './app/lib/client.js';
-import { STATUS, DEFAULT_SERVER } from './app/lib/status.js';
+import * as statusLib from './app/lib/status.js';
+const { STATUS, DEFAULT_SERVER } = statusLib;
+// the synced copy may predate COFFEE_NOTE; fall back to the same text the extension uses
+const COFFEE_NOTE = statusLib.COFFEE_NOTE || 'Coffee break ☕';
+const isCoffeeBreak = (m) => !!m && m.state === 'brb' && /coffee/i.test(m.message || '');
 import { fetchWeather } from './app/lib/weather.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -21,9 +25,15 @@ const DEFAULTS = {
   server: DEFAULT_SERVER, team: '', name: '', email: '', color: '#6C8CFF',
   avatar: { skin: '#F5D0B5', hair: '#2B2118', style: 'short' },
   idleMinutes: 5, lunchMinutes: 45, gchat: false, bubbles: true, sound: true, autoBack: true, launchAtLogin: true,
+  // floating mini office (opt-in) and expanded window
+  miniOpen: false, miniOnTop: false, miniAllSpaces: false, miniBounds: null, fullBounds: null,
 };
+// window placement is owned by the Mac app, never round-tripped through the UI's settings form
+const WINDOW_KEYS = ['miniOpen', 'miniOnTop', 'miniAllSpaces', 'miniBounds', 'fullBounds'];
 
-let settings, client, tray, panel, callWin = null;
+let settings, client, tray, panel, callWin = null, miniWin = null, fullWin = null;
+let quitting = false;
+let incoming = null; // { name, callId, at } — latest call invite, for the tray indicator
 const bubbles = new Map(); // id -> BrowserWindow
 let idleState = 'active';
 
@@ -60,13 +70,16 @@ function saveSettings() {
 // ------------------------------------------------------------------ windows
 const preload = path.join(__dirname, 'preload.cjs');
 const webPreferences = { preload, contextIsolation: true, nodeIntegration: false, sandbox: true, autoplayPolicy: 'no-user-gesture-required' };
+// desk windows: let Chromium throttle timers/rAF while hidden so the 3D scene costs nothing in the background
+const deskPrefs = { ...webPreferences, backgroundThrottling: true };
+const DRAG_CSS = '.drag-region{-webkit-app-region:drag} .drag-region button, .drag-region a, .drag-region input, .drag-region select, .drag-region textarea, .drag-region [role="button"]{-webkit-app-region:no-drag}';
 
 function createPanel() {
   panel = new BrowserWindow({
     width: 400, height: 660, show: false, frame: false, resizable: false, movable: false,
     fullscreenable: false, minimizable: false, maximizable: false, skipTaskbar: true,
     vibrancy: 'popover', visualEffectState: 'active', roundedCorners: true,
-    backgroundColor: '#00000000', transparent: false, webPreferences,
+    backgroundColor: '#00000000', transparent: false, webPreferences: deskPrefs,
   });
   panel.loadURL('app://deskmate/sidepanel/sidepanel.html');
   panel.on('blur', () => { if (!panel.webContents.isDevToolsOpened()) panel.hide(); });
@@ -84,6 +97,127 @@ function togglePanel() {
   panel.setPosition(x, process.platform === 'darwin' ? y : wa.y + 8);
   panel.show();
   panel.focus();
+}
+
+// ---- shared helpers for the movable windows
+function onScreen(b) {
+  if (!b || !Number.isFinite(b.x) || !Number.isFinite(b.y) || !(b.width > 0) || !(b.height > 0)) return false;
+  return screen.getAllDisplays().some(({ workArea: a }) =>
+    b.x < a.x + a.width - 40 && b.x + b.width > a.x + 40 && b.y >= a.y - 10 && b.y < a.y + a.height - 40);
+}
+function rememberBounds(win, key) {
+  let t = null;
+  const save = () => {
+    clearTimeout(t);
+    t = setTimeout(() => {
+      if (win.isDestroyed() || win.isMinimized() || win.isFullScreen()) return;
+      settings[key] = win.getNormalBounds ? win.getNormalBounds() : win.getBounds();
+      saveSettings();
+    }, 400);
+  };
+  win.on('resize', save);
+  win.on('move', save);
+}
+
+// ---- floating mini office (opt-in): compact scene, my status, reactions, team list
+const MINI = { width: 340, height: 520, minWidth: 300, minHeight: 420, maxWidth: 460, maxHeight: 760 };
+function miniUrl() {
+  // the compact popup page ships with the extension; until it's synced, fall back to the lite desk
+  return fs.existsSync(path.join(APP_DIR, 'popup', 'popup.html'))
+    ? 'app://deskmate/popup/popup.html?window=mini'
+    : 'app://deskmate/sidepanel/sidepanel.html?lite=1&window=mini';
+}
+function createMini() {
+  const wa = screen.getPrimaryDisplay().workArea;
+  const saved = onScreen(settings.miniBounds) ? settings.miniBounds : null;
+  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+  const width = clamp(saved?.width || MINI.width, MINI.minWidth, MINI.maxWidth);
+  const height = clamp(saved?.height || MINI.height, MINI.minHeight, MINI.maxHeight);
+  miniWin = new BrowserWindow({
+    ...MINI, width, height,
+    x: saved ? saved.x : wa.x + wa.width - width - 24,
+    y: saved ? saved.y : wa.y + wa.height - height - 24,
+    show: false, frame: false, resizable: true, movable: true, skipTaskbar: true,
+    fullscreenable: false, minimizable: false, maximizable: false, hasShadow: true,
+    vibrancy: 'under-window', visualEffectState: 'active', roundedCorners: true,
+    backgroundColor: '#00000000', title: 'Deskmate mini office', webPreferences: deskPrefs,
+  });
+  applyMiniPrefs();
+  miniWin.webContents.on('did-finish-load', () => {
+    miniWin?.webContents.insertCSS(DRAG_CSS).catch(() => {});
+    miniWin?.webContents.executeJavaScript("document.documentElement.classList.add('deskmate-mini')").catch(() => {});
+  });
+  miniWin.loadURL(miniUrl());
+  rememberBounds(miniWin, 'miniBounds');
+  // closing just tucks it away; it stays warm for the next toggle (and is throttled while hidden)
+  miniWin.on('close', (e) => {
+    if (quitting) return;
+    e.preventDefault();
+    hideMini();
+  });
+  miniWin.on('closed', () => { miniWin = null; });
+}
+function applyMiniPrefs() {
+  if (!miniWin || miniWin.isDestroyed()) return;
+  miniWin.setAlwaysOnTop(!!settings.miniOnTop, 'floating');
+  miniWin.setVisibleOnAllWorkspaces(!!settings.miniAllSpaces, { visibleOnFullScreen: !!settings.miniAllSpaces, skipTransformProcessType: true });
+}
+function showMini() {
+  const fresh = !miniWin || miniWin.isDestroyed();
+  if (fresh) createMini();
+  const w = miniWin;
+  const reveal = () => { if (!w.isDestroyed()) { w.show(); w.focus(); } };
+  if (fresh) w.once('ready-to-show', reveal); else reveal();
+  if (!settings.miniOpen) { settings.miniOpen = true; saveSettings(); }
+}
+function hideMini() {
+  if (miniWin && !miniWin.isDestroyed()) miniWin.hide();
+  if (settings.miniOpen) { settings.miniOpen = false; saveSettings(); }
+}
+function toggleMini() {
+  if (miniWin && !miniWin.isDestroyed() && miniWin.isVisible()) hideMini(); else showMini();
+}
+
+// ---- expanded window: a normal macOS window with the full desk, team, settings and social bits
+const FULL_CSS = `${DRAG_CSS}
+html::before{content:"";position:fixed;top:0;left:0;right:0;height:28px;-webkit-app-region:drag;z-index:2147483646;pointer-events:none}
+body{padding-top:28px;box-sizing:border-box}
+main{min-height:calc(100vh - 28px)}
+.top{-webkit-app-region:drag}
+.top button,.top a,.top input,.top select{-webkit-app-region:no-drag}`;
+function openFull({ settings: wantSettings = false } = {}) {
+  if (fullWin && !fullWin.isDestroyed()) {
+    if (fullWin.isMinimized()) fullWin.restore();
+    fullWin.show(); fullWin.focus();
+    if (wantSettings) fullWin.webContents.send('event', { type: 'open-settings' });
+    return fullWin;
+  }
+  const wa = screen.getPrimaryDisplay().workArea;
+  const saved = onScreen(settings.fullBounds) ? settings.fullBounds : null;
+  const W = Math.min(980, wa.width - 80), H = Math.min(760, wa.height - 60);
+  const win = fullWin = new BrowserWindow({
+    width: Math.max(saved?.width || W, 420), height: Math.max(saved?.height || H, 640),
+    x: saved ? saved.x : wa.x + Math.round((wa.width - W) / 2),
+    y: saved ? saved.y : wa.y + Math.round((wa.height - H) / 2),
+    minWidth: 420, minHeight: 640, show: false, title: 'Deskmate',
+    titleBarStyle: 'hiddenInset', vibrancy: 'under-window', visualEffectState: 'followWindow',
+    backgroundColor: '#00000000', fullscreenable: true, webPreferences: deskPrefs,
+  });
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.insertCSS(FULL_CSS).catch(() => {});
+    win.webContents.executeJavaScript("document.documentElement.classList.add('deskmate-full')").catch(() => {});
+  });
+  win.loadURL(`app://deskmate/sidepanel/sidepanel.html?window=full${wantSettings ? '&settings=1' : ''}`);
+  if (wantSettings) win.webContents.once('did-finish-load', () => win.webContents.send('event', { type: 'open-settings' }));
+  win.once('ready-to-show', () => { win.show(); win.focus(); });
+  rememberBounds(win, 'fullBounds');
+  // a real window gets a Dock icon and Cmd-Tab entry while it's open, then we go back to the menu bar
+  if (process.platform === 'darwin') app.dock?.show()?.catch?.(() => {});
+  win.on('closed', () => {
+    if (fullWin === win) fullWin = null;
+    if (process.platform === 'darwin' && !quitting) app.dock?.hide();
+  });
+  return win;
 }
 
 function showBubble(data) {
@@ -130,7 +264,7 @@ async function openCall(callId, ring) {
   callWin = new BrowserWindow({
     width: W, height: H, x: wa.x + Math.round((wa.width - W) / 2), y: wa.y + 30, title: 'Deskmate call',
     backgroundColor: '#202124', minimizable: true, resizable: true, minWidth: 520, minHeight: 400,
-    webPreferences,
+    webPreferences: { ...webPreferences, backgroundThrottling: false },   // keep audio/video smooth when minimised
   });
   callWin.loadURL(url);
   callWin.on('closed', () => { callWin = null; });
@@ -138,7 +272,7 @@ async function openCall(callId, ring) {
 
 // ------------------------------------------------------------------ state → UI
 function fullState(snap = client.snapshot()) {
-  const { lastStatus, ...pub } = settings;
+  const { lastStatus, miniBounds, fullBounds, ...pub } = settings;
   return { ...snap, settings: pub, configured: client.configured, gchat: { available: false } };
 }
 
@@ -183,6 +317,9 @@ function onEvent(e, snap) {
       showBubble({ kind: 'wave', id: newId(), from: e.from, name: e.fromName, emoji: e.emoji, color: snap.members.find(m => m.id === e.from)?.color, avatar: snap.members.find(m => m.id === e.from)?.avatar });
       break;
     case 'call:invite':
+      incoming = { name: e.fromName || 'Someone', callId: e.callId, at: Date.now() };
+      updateTray(snap);
+      setTimeout(() => { if (incoming?.callId === e.callId) { incoming = null; updateTray(client.snapshot()); } }, 60000);
       showBubble({ kind: 'invite', id: e.callId, url: e.url, from: e.from, name: e.fromName, color: e.color, avatar: e.avatar });
       break;
     case 'kudos':
@@ -214,11 +351,19 @@ function updateTray(snap) {
     tray.setImage(trayImage('trayAlert'));
     tray.setTitle(` ${open[0].fromName.split(' ')[0]} needs help`);
     tray.setToolTip(`${open.length} teammate(s) asking for help`);
+  } else if (incoming) {
+    tray.setImage(trayImage('trayAlert'));
+    tray.setTitle(` ${incoming.name.split(' ')[0]} is calling`);
+    tray.setToolTip(`${incoming.name} invited you to a call`);
   } else {
     tray.setImage(trayImage('trayTemplate'));
-    const myEmoji = me && me.state !== 'desk' ? `${STATUS[me.state]?.emoji} ` : '';
-    tray.setTitle(` ${myEmoji}${here}`);
-    tray.setToolTip(`Deskmate · ${snap.team}\n${here} at desk · ${others.filter(m => m.state === 'lunch').length} at lunch`);
+    // when I'm not at my desk, a short label ("Focus", "BRB", "Lunch") is the availability indicator;
+    // at my desk it's just how many teammates are around
+    const away = me && me.state !== 'desk';
+    const label = !away ? '' : isCoffeeBreak(me) ? 'Coffee' : (STATUS[me.state]?.short || '');
+    tray.setTitle(away && label ? ` ${label}` : ` ${here}`);
+    const mine = me ? `You: ${isCoffeeBreak(me) ? COFFEE_NOTE : STATUS[me.state]?.label || me.state}${me.message && !isCoffeeBreak(me) ? ` — ${me.message}` : ''}\n` : '';
+    tray.setToolTip(`Deskmate · ${snap.team}\n${mine}${here} at desk · ${others.filter(m => m.state === 'lunch').length} at lunch`);
   }
   tray.setContextMenu(null);
 }
@@ -226,14 +371,26 @@ function updateTray(snap) {
 function contextMenu() {
   const me = client.state.me;
   const snap = client.snapshot();
+  const coffee = isCoffeeBreak(me);
   const status = (key) => ({
-    label: `${STATUS[key].emoji}  ${STATUS[key].label}`, type: 'radio', checked: me?.state === key,
+    label: `${STATUS[key].emoji}  ${STATUS[key].label}`, type: 'radio', checked: me?.state === key && !(key === 'brb' && coffee),
     click: () => act('status', { state: key }),
   });
+  const miniShown = !!(miniWin && !miniWin.isDestroyed() && miniWin.isVisible());
   return Menu.buildFromTemplate([
-    { label: 'Open team desk', click: togglePanel },
+    { label: 'Open team desk', accelerator: 'Alt+Shift+D', click: togglePanel },
+    { label: 'Open full window', click: () => openFull() },
+    { label: 'Mini office', type: 'checkbox', checked: miniShown, accelerator: 'Alt+Shift+M', click: toggleMini },
+    { label: 'Mini office options', submenu: [
+      { label: 'Keep on top of other windows', type: 'checkbox', checked: !!settings.miniOnTop,
+        click: (i) => { settings.miniOnTop = i.checked; saveSettings(); applyMiniPrefs(); } },
+      { label: 'Show on all Spaces', type: 'checkbox', checked: !!settings.miniAllSpaces,
+        click: (i) => { settings.miniAllSpaces = i.checked; saveSettings(); applyMiniPrefs(); } },
+    ] },
     { type: 'separator' },
-    status('desk'), status('lunch'), status('brb'), status('dnd'), status('meeting'), status('leave'),
+    status('desk'), status('lunch'), status('brb'),
+    { label: '☕  Coffee break', type: 'radio', checked: coffee, click: () => act('status', { state: 'brb', message: COFFEE_NOTE }) },
+    status('dnd'), status('meeting'), status('leave'),
     { type: 'separator' },
     snap.myHelp
       ? { label: 'Cancel my help request', click: () => client.cancelHelp(snap.myHelp.id) }
@@ -254,7 +411,7 @@ function applyLoginItem() {
 }
 
 // ------------------------------------------------------------------ actions (same names as the extension)
-function act(name, args = {}) {
+function act(name, args = {}, from = null) {
   const me = client.state.me;
   switch (name) {
     case 'status': {
@@ -276,12 +433,28 @@ function act(name, args = {}) {
     case 'standup:start': client.standupStart(); break;
     case 'standup:next': client.standupNext(); break;
     case 'standup:end': client.standupEnd(); break;
-    case 'open-desk': if (!panel.isVisible()) togglePanel(); break;
-    case 'call': { const callId = newId(); client.invite(args.to, callId); openCall(callId, args.to); break; }
+    case 'open-desk':
+      // from the mini office (or asking for Settings) → the expanded window; from a bubble → the menu-bar panel as before
+      if (args.settings || (from && from === miniWin) || (fullWin && !fullWin.isDestroyed() && fullWin.isVisible())) openFull({ settings: !!args.settings });
+      else if (!panel.isVisible()) togglePanel();
+      break;
+    case 'call': {
+      // one room, everyone invited to it ("coffee chat" sends several ids)
+      const to = [...new Set((Array.isArray(args.to) ? args.to : [args.to]).filter(Boolean))];
+      if (!to.length) break;
+      const callId = newId();
+      for (const id of to) client.invite(id, callId);
+      openCall(callId, to[0]);
+      break;
+    }
     case 'call:join': openCall(args.callId); break;
-    case 'call:accept': openCall(args.callId); break;
-    case 'call:decline': client.decline(args.from, args.callId); break;
+    case 'call:accept': clearIncoming(args.callId); openCall(args.callId); break;
+    case 'call:decline': clearIncoming(args.callId); client.decline(args.from, args.callId); break;
   }
+}
+
+function clearIncoming(callId) {
+  if (incoming && (!callId || incoming.callId === callId)) { incoming = null; updateTray(client.snapshot()); }
 }
 
 // ------------------------------------------------------------------ auto-away (system idle + screen lock)
@@ -350,7 +523,9 @@ function onIdleChange(s) {
 // ------------------------------------------------------------------ IPC
 ipcMain.handle('get-state', () => fullState());
 ipcMain.handle('get-settings', () => settings);
-ipcMain.handle('save-settings', (_e, next) => {
+ipcMain.handle('save-settings', (_e, incomingSettings) => {
+  const next = { ...(incomingSettings || {}) };
+  for (const k of WINDOW_KEYS) delete next[k];
   const loginChanged = next.launchAtLogin !== undefined && next.launchAtLogin !== settings.launchAtLogin;
   settings = { ...settings, ...next };
   settings.userId = settings.email ? settings.email.toLowerCase() : settings.userId;
@@ -367,10 +542,12 @@ ipcMain.handle('call-config', () => {
   const { server, team, userId, name, email, color, avatar, tz } = settings;
   return { settings: { server, team, userId, name, email, color, avatar, tz }, members: snap.members, me: snap.me };
 });
-ipcMain.on('action', (_e, name, args) => act(name, args));
+ipcMain.on('action', (e, name, args) => act(name, args, BrowserWindow.fromWebContents(e.sender)));
 ipcMain.on('close-window', (e) => {
   const w = BrowserWindow.fromWebContents(e.sender);
-  if (w === panel) panel.hide(); else w?.close();
+  if (w === panel) panel.hide();
+  else if (w && w === miniWin) hideMini();
+  else w?.close();
 });
 
 // ------------------------------------------------------------------ boot
@@ -407,6 +584,7 @@ app.whenReady().then(() => {
   createPanel();
   client.connect();
   if (!client.configured) panel.webContents.once('did-finish-load', togglePanel);
+  else if (settings.miniOpen) showMini();   // it was open when you last quit
 
   // system idle → Away; lock screen → Away immediately
   setInterval(() => {
@@ -427,16 +605,23 @@ app.whenReady().then(() => {
     'Alt+Shift+H': () => { const mine = client.snapshot().myHelp; mine ? client.cancelHelp(mine.id) : client.askHelp(''); },
     'Alt+Shift+L': () => act('status', { state: client.state.me?.state === 'lunch' ? 'desk' : 'lunch' }),
     'Alt+Shift+F': () => act('status', { state: client.state.me?.state === 'dnd' ? 'desk' : 'dnd' }),
+    'Alt+Shift+M': toggleMini,
   };
   for (const [k, fn] of Object.entries(keys)) { try { globalShortcut.register(k, fn); } catch {} }
 
   // automated smoke test hook
-  globalThis.deskmate = { get client() { return client; }, get panel() { return panel; }, bubbles, togglePanel, act, get callWin() { return callWin; } };
+  globalThis.deskmate = {
+    get client() { return client; }, get panel() { return panel; }, bubbles, togglePanel, act, get callWin() { return callWin; },
+    get miniWin() { return miniWin; }, get fullWin() { return fullWin; }, toggleMini, showMini, hideMini, openFull,
+  };
   if (process.env.DESKMATE_SMOKE) import(pathToFileURL(process.env.DESKMATE_SMOKE).toString());
 });
 
 app.on('second-instance', () => togglePanel());
+app.on('before-quit', () => { quitting = true; });
 app.on('will-quit', () => globalShortcut.unregisterAll());
+// clicking the Dock icon (only shown while the full window is open) brings it back
+app.on('activate', () => { if (fullWin && !fullWin.isDestroyed()) { fullWin.show(); fullWin.focus(); } });
 app.on('window-all-closed', (e) => e.preventDefault()); // keep living in the menu bar
 app.on('web-contents-created', (_e, wc) => {
   wc.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });

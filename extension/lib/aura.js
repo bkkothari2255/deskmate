@@ -1,6 +1,6 @@
-// Focus-mode "power-up" aura: a flickering energy flame around the character, sparks rising off
-// it, a glow on the floor, and a shockwave + flash at the moment they switch Focus on.
-// Pure three.js, additive blending, no textures.
+// Focus-mode aura: a calm, softly breathing veil of light around the character, a few motes
+// drifting up, a glow on the floor, and a gentle ripple + flash when they switch Focus on.
+// Pure three.js, no real lights (cheap: no shader recompiles when someone starts focusing).
 import { THREE } from './avatar.js';
 
 const VERT = /* glsl */`
@@ -71,7 +71,7 @@ function glowTexture() {
 let GLOW = null;
 
 export class FocusAura {
-  constructor({ color = '#7C3AED', core = '#5EEAD4', size = 1 } = {}) {
+  constructor({ color = '#8DA8C2', core = '#E9E4DA', size = 1 } = {}) {
     this.size = size;
     GLOW ||= glowTexture();
     this.group = new THREE.Group();
@@ -92,11 +92,11 @@ export class FocusAura {
       this.group.add(mesh);
       return mesh;
     };
-    this.outer = flame(1.0, 1.0, color, core);
-    this.inner = flame(0.82, 1.6, core, '#ffffff');
+    this.outer = flame(1.0, 0.35, color, core);
+    this.inner = flame(0.82, 0.5, core, '#ffffff');
 
     // sparks drifting up through the flame
-    const N = 48;
+    const N = 24;
     this.sparkSeed = Array.from({ length: N }, () => ({ a: Math.random() * Math.PI * 2, r: 0.15 + Math.random() * 0.4, s: 0.6 + Math.random() * 0.9, o: Math.random() }));
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
@@ -124,9 +124,6 @@ export class FocusAura {
     this.flash = disc(2.6, core);
     this.flash.rotation.x = 0; this.flash.position.y = 0.9; // a camera-ish facing burst of light
 
-    this.light = new THREE.PointLight(color, 0, 2.6, 2);
-    this.light.position.y = 1.0;
-    this.group.add(this.light);
   }
 
   // on: should the aura show; t: scene time
@@ -145,12 +142,12 @@ export class FocusAura {
     this.group.position.copy(pos);
     this.group.scale.setScalar(this.size);
     // flicker + a surge during the power-up
-    const flick = 0.9 + Math.sin(t * 13.0) * 0.05 + Math.sin(t * 29.0) * 0.04;
+    const flick = 0.92 + Math.sin(t * 2.1) * 0.06;
     const surge = 1 + burst * 0.6;
     const yScale = seated ? 0.95 : 1;
     for (const [mesh, k] of [[this.outer, 1], [this.inner, 0.85]]) {
       mesh.material.uniforms.uTime.value = t;
-      mesh.material.uniforms.uPower.value = p * flick * k * surge * 1.2;
+      mesh.material.uniforms.uPower.value = p * flick * k * surge * 0.75;
       mesh.scale.set(surge * (0.96 + 0.04 * Math.sin(t * 7)), yScale * (surge * 0.9 + 0.1) * (0.97 + 0.05 * Math.sin(t * 5.3)), surge * (0.96 + 0.04 * Math.cos(t * 7)));
     }
     // sparks
@@ -164,15 +161,14 @@ export class FocusAura {
       arr[i * 3 + 2] = Math.sin(a) * r;
     });
     this.sparks.geometry.attributes.position.needsUpdate = true;
-    this.sparks.material.opacity = p * 0.9;
-    this.pool.material.opacity = p * (0.45 + 0.1 * Math.sin(t * 6));
+    this.sparks.material.opacity = p * 0.6;
+    this.pool.material.opacity = p * (0.35 + 0.06 * Math.sin(t * 1.6));
     // shockwave ring races outwards, flash fades
     const k = 1 - burst;
     this.ring.material.opacity = burst * 0.9;
     this.ring.scale.setScalar(1 + k * 4);
     this.flash.material.opacity = Math.pow(burst, 2) * 0.8;
     if (faceCamera) this.flash.quaternion.copy(faceCamera.quaternion);
-    this.light.intensity = p * (1.2 + 0.4 * Math.sin(t * 11)) + burst * 4;
   }
 
   dispose(scene) {

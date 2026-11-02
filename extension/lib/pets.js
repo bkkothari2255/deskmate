@@ -2,6 +2,7 @@
 // A pet naps or sits on its owner's desk, trots after them when they walk somewhere, perks up
 // when someone needs help, and curls up asleep while its owner is in Focus.
 import { THREE } from './avatar.js';
+import { mergeChildren } from './scene/kit.js';
 
 const mat = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.65, metalness: 0, ...o });
 
@@ -128,6 +129,12 @@ export class Pet {
     }
     // little "z" for naps
     this.zzz = null;
+    // fold every static part into one vertex-coloured mesh per moving group (body / head / tail),
+    // so a pet costs a handful of draw calls instead of dozens
+    const vc = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.65, metalness: 0 });
+    mergeChildren(this.body, vc, new Set(this.legs || []));
+    if (this.head) mergeChildren(this.head, vc);
+    if (this.tail) mergeChildren(this.tail, vc);
   }
 
   hop(strength = 1) { this.hopT = performance.now() / 1000; this.hopK = strength; }

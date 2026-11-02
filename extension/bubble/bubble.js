@@ -109,11 +109,11 @@ const scene = new THREE.Scene();
 addSoftLights(scene, { shadows: false });
 const cam = new THREE.PerspectiveCamera(30, W / H, 0.1, 20);
 if (ROUND) {   // head-and-shoulders portrait with the raised hand in frame
-  cam.position.set(0.1, usingModels ? 1.0 : 1.5, usingModels ? 2.1 : 2.6);
-  cam.lookAt(0, usingModels ? 0.95 : 1.45, 0);
+  cam.position.set(0.1, 1.44, 2.6);
+  cam.lookAt(0, 1.38, 0);
 } else {
-  cam.position.set(0.12, usingModels ? 1.05 : 1.6, usingModels ? 2.3 : 2.95);
-  cam.lookAt(0, usingModels ? 0.82 : 1.42, 0);
+  cam.position.set(0.12, 1.54, 2.95);
+  cam.lookAt(0, 1.36, 0);
 }
 const av = makeCharacter({ id: data.from || data.name, color: data.color || '#6C8CFF', avatar: data.avatar || {} });
 av.pose = 'stand';

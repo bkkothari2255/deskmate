@@ -15,6 +15,17 @@ export const STATUS = {
 
 export const QUICK = ['desk', 'lunch', 'brb', 'dnd', 'leave'];
 
+// A coffee break is a BRB with this note: the 3D desk sends that person to the café
+// lounge to sip coffee instead of hiding in the BRB box. No server change needed.
+export const COFFEE_NOTE = 'Coffee break ☕';
+export const isCoffeeBreak = (m) => !!m && m.state === 'brb' && /coffee/i.test(m.message || '');
+
+// Deskmate design palette (shared by the 3D scene and the UI tokens in ui.css)
+export const PALETTE = {
+  midnight: '#182638', slate: '#455B70', ivory: '#E9E4DA', walnut: '#B98B64',
+  sage: '#A5BBA9', softBlue: '#8DA8C2', beige: '#D3B69C',
+};
+
 export const PETS = [
   { id: '', label: 'None', emoji: '🚫' },
   { id: 'cat', label: 'Cat', emoji: '🐱' },

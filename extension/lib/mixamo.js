@@ -11,7 +11,7 @@ import { FBXLoader } from './vendor/FBXLoader.js';
 import * as SkeletonUtils from './vendor/SkeletonUtils.js';
 
 const BASE = new URL('../models/', import.meta.url).href;
-const TARGET_HEIGHT = 1.62;
+const TARGET_HEIGHT = 1.7;            // same standing height as the procedural heroes
 const SEAT_Y = 0.47;                   // chair seat height in the desk scene            // metres, matches the desk/chair scale
 const FADE = 0.35;
 
@@ -25,6 +25,9 @@ export function loadManifest() {
     .catch(() => null);
   return manifestP;
 }
+
+// optional manifest.base (e.g. "heroes/") is relative to the models folder
+const baseOf = (manifest) => (manifest?.base ? new URL(manifest.base, BASE).href : BASE);
 
 const fileCache = new Map();
 function loadFile(file, base = BASE) {
@@ -66,7 +69,7 @@ async function loadClips(manifest) {
       const out = {};
       for (const [role, file] of Object.entries(manifest.animations || {})) {
         try {
-          const { animations } = await loadFile(file, manifest.base || BASE);
+          const { animations } = await loadFile(file, baseOf(manifest));
           const clip = animations[0];
           if (!clip) continue;
           out[role] = split(inPlace(clip.clone()), role);
@@ -85,13 +88,19 @@ function wanted(pose, act) {
   if (pose === 'sit') {
     const lower = act === 'type' ? ['typing', 'sitIdle'] : ['sitIdle', 'typing'];
     const upper = {
-      type: ['typing', 'sitIdle'], talk: ['sitTalk', 'sitIdle'], eat: ['eat', 'sitIdle'],
-      raise: ['raise', 'sitIdle'], wave: ['wave', 'sitIdle'], listen: ['sitIdle'],
+      type: ['typing', 'sitIdle'], talk: ['sitTalk', 'sitIdle'], eat: ['eat', 'sitDrink', 'sitIdle'],
+      raise: ['raise', 'sitIdle'], wave: ['sitWave', 'wave', 'sitIdle'], listen: ['sitListen', 'sitIdle'],
+      drink: ['sitDrink', 'drink', 'sitIdle'], celebrate: ['sitCheer', 'celebrate', 'sitIdle'],
+      look: ['sitLook', 'sitIdle'], cross: ['sitIdle'],
     }[act] || ['sitIdle', 'typing'];
     return { lower, upper };
   }
-  const upper = { raise: ['raise', 'idle'], wave: ['wave', 'idle'] }[act] || ['idle'];
-  return { lower: ['idle'], upper };
+  const upper = {
+    raise: ['raise', 'idle'], wave: ['wave', 'idle'], talk: ['talk', 'idle'], drink: ['drink', 'idle'],
+    celebrate: ['celebrate', 'idle'], look: ['look', 'idle'], cross: ['cross', 'idle'],
+  }[act] || ['idle'];
+  const lower = act === 'celebrate' ? ['celebrate', 'idle'] : ['idle'];
+  return { lower, upper };
 }
 
 function hashPick(seed, n) {
@@ -122,7 +131,7 @@ export function createMixamoAvatar(manifest, { model, seed = '', color = '#8EB8F
   const W = { sit: new Spring(0, 120, 18), type: new Spring(0, 140, 18), wave: new Spring(0, 160, 16), raise: new Spring(0, 160, 16) };
   let mixer = null, clips = null, layers = { lower: null, upper: null }, current = { lower: '', upper: '' };
   let head = null, rightHand = null;
-  const props = { phones: new THREE.Group(), mic: new THREE.Group(), bowl: new THREE.Group() };
+  const props = { phones: new THREE.Group(), mic: new THREE.Group(), bowl: new THREE.Group(), cup: new THREE.Group() };
   const squash = new Spring(0, 320, 9);
   const materials = [];
   let phonesOn = [false, false];
@@ -153,6 +162,7 @@ export function createMixamoAvatar(manifest, { model, seed = '', color = '#8EB8F
       mixer.update(dt);
       poseLayer(t, dt);
       props.bowl.visible = api.activity === 'eat' && api.pose !== 'walk';
+      props.cup.visible = api.activity === 'drink' && api.pose !== 'walk';
     },
     dispose() {
       mixer?.stopAllAction();
@@ -192,7 +202,7 @@ export function createMixamoAvatar(manifest, { model, seed = '', color = '#8EB8F
   (async () => {
     if (!def) return;
     try {
-      const [{ scene, animations: own }, loadedClips] = await Promise.all([loadFile(def.file, manifest.base || BASE), loadClips(manifest)]);
+      const [{ scene, animations: own }, loadedClips] = await Promise.all([loadFile(def.file, baseOf(manifest)), loadClips(manifest)]);
       const model = SkeletonUtils.clone(scene);
       // per-person materials (tint the top in their colour)
       const tintRe = Array.isArray(def.tint) ? (def.tint.length ? new RegExp(def.tint.join('|'), 'i') : null) : /top|shirt|hoodie|sweater|jacket|tee|torso/i;
@@ -367,6 +377,18 @@ export function createMixamoAvatar(manifest, { model, seed = '', color = '#8EB8F
     props.bowl.visible = false;
     attach(props.phones, head);
     attach(props.bowl, rightHand, new THREE.Vector3(0, 0.08, 0.04));
+    // coffee cup for 'drink'
+    const cupM = new THREE.MeshStandardMaterial({ color: '#f3efe7', roughness: 0.35 });
+    const coffeeM = new THREE.MeshStandardMaterial({ color: '#5a3a24', roughness: 0.4 });
+    materials.push(cupM, coffeeM);
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.032, 0.08, 40), cupM);
+    const top = new THREE.Mesh(new THREE.CircleGeometry(0.036, 32), coffeeM);
+    top.rotation.x = -Math.PI / 2; top.position.y = 0.036;
+    const handle = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.007, 10, 24), cupM);
+    handle.position.x = 0.042;
+    props.cup.add(body, top, handle);
+    props.cup.visible = false;
+    attach(props.cup, rightHand, new THREE.Vector3(0, 0.09, 0.03));
   }
   function attach(obj, bone, offset) {
     if (!bone) return;

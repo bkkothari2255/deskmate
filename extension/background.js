@@ -43,7 +43,8 @@ function init() {
     client.onEvent(onEvent);
     client.connect();
     chrome.idle.setDetectionInterval(Math.max(15, settings.idleMinutes * 60));
-    chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+    // the toolbar button opens the compact popup (popup/popup.html); it opens the full side panel
+    chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
     chrome.alarms.create('watchdog', { periodInMinutes: 0.5 });
     chrome.alarms.create('weather', { periodInMinutes: 30 });
     refreshWeather();
@@ -178,7 +179,7 @@ function updateBadge(snap) {
   const me = snap.me;
   if (snap.conn !== 'online') {
     chrome.action.setBadgeText({ text: snap.conn === 'setup' ? '' : '…' });
-    chrome.action.setBadgeBackgroundColor({ color: '#94A3B8' });
+    chrome.action.setBadgeBackgroundColor({ color: '#8C98A5' });
     chrome.action.setTitle({ title: snap.conn === 'setup' ? 'Deskmate — click to set up' : 'Deskmate — connecting…' });
     return;
   }
@@ -187,10 +188,10 @@ function updateBadge(snap) {
   const here = others.filter(m => STATUS[m.state]?.present).length;
   if (open.length) {
     chrome.action.setBadgeText({ text: `!${open.length > 1 ? open.length : ''}` });
-    chrome.action.setBadgeBackgroundColor({ color: '#F43F5E' });
+    chrome.action.setBadgeBackgroundColor({ color: '#D45A6E' });
   } else {
     chrome.action.setBadgeText({ text: here ? String(here) : '' });
-    chrome.action.setBadgeBackgroundColor({ color: '#22C55E' });
+    chrome.action.setBadgeBackgroundColor({ color: '#4E9A6A' });
   }
   chrome.action.setBadgeTextColor?.({ color: '#FFFFFF' });
   const lunch = others.filter(m => m.state === 'lunch').length;
@@ -371,13 +372,18 @@ function act(name, args = {}) {
     case 'standup:next': client.standupNext(); break;
     case 'standup:end': client.standupEnd(); break;
     case 'open-desk':
+      // (needs a user gesture in Chrome; the popup calls chrome.sidePanel.open itself)
+      if (args.settings) chrome.storage.session?.set({ openSettings: true }).catch(() => {});
       chrome.windows.getLastFocused().then(w => chrome.sidePanel.open({ windowId: w.id })).catch(() => {});
       break;
     case 'call': {
-      // ring them straight away and open the call room; they join the same room when they tap Join
+      // ring them straight away and open the call room; they join the same room when they tap Join.
+      // args.to: one id, or several (e.g. a coffee chat) who are all invited into the same room
+      const to = [...new Set([].concat(args.to || []).filter(Boolean))];
+      if (!to.length) break;
       const callId = newId();
-      client.invite(args.to, callId);
-      openCall(callId, args.to);
+      for (const id of to) client.invite(id, callId);
+      openCall(callId, to[0]);
       break;
     }
     case 'call:join': openCall(args.callId); break;

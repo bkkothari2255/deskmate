@@ -10,14 +10,14 @@ It has three parts:
 | **Mac menu-bar app** (`companion/`) | Icon and live count in the top menu bar, a one-click desk dropdown, help/call bubbles that float over **every** app (even full-screen), global shortcuts, and macOS Focus → Deskmate Focus. |
 | **Server** (`cloudflare/` or `server/`) | A small WebSocket service, hosted free on Cloudflare or as a Node process, for presence, help requests and call signalling. It never sees or stores audio or video. |
 
-![The six characters: Robo, Knight, Mage, Barbarian, Rogue and Hooded Rogue](docs/screenshots/characters.png)
+![Deskmate's office: an L-shaped room with a team bench, glass meeting rooms and a dining & café annex](docs/screenshots/office-day.png)
 
 <p>
-  <img src="docs/screenshots/desk-light.png" width="360" alt="Desk in light mode">
-  <img src="docs/screenshots/desk-dark.png" width="360" alt="Desk in dark mode">
+  <img src="docs/screenshots/office-evening.png" width="480" alt="The same office in the evening: warm neon standing lamps glow as the daylight fades">
+  <img src="docs/screenshots/heroes.png" width="480" alt="The eight heroes: Titan, Nova, Bolt, Aegis, Shade, Blaze, Frost and Gizmo">
 </p>
 
-On the desk above: Priya is asking for help (hand up), Aisha is in Focus (her *Do Not Disturb* board is up), Tom is at the café table for lunch and Leo is BRB, hidden inside his box in the corner.
+Everyone sits at the shared bench on the blue rug; people in a meeting walk off to a glass **meeting room** of their own, lunch and coffee breaks go to the **dining & café** annex, and a BRB box waits in the corner. In the evening the neon standing lamps take over from the sunlight.
 
 <p>
   <img src="docs/screenshots/help-bubble.png" width="390" alt="Help bubble: Mei Lin needs help, Join / Not now">
@@ -67,14 +67,33 @@ node test/demo.cjs --live   # keeps 5 bots online in a team; set TEAM=<your code
 - **Weather and time of day:** the sky over the desk follows *your* clock (dawn, day, dusk, a starry night) and your local weather (sun, clouds, rain, snow, fog, storms with lightning), and the lighting changes with it. Everyone's card and team row shows their weather. The city comes from your time zone, or set one under **Settings → Advanced → Weather for the sky** (Open-Meteo, free, no key).
 - **Team stand-up:** set a time and days under **Settings → Team stand-up** (it applies to the whole team). At that time everyone who's here or focusing walks to a circle in front of the desks, a gong plays, and a spotlight + 🎤 passes from person to person with a countdown (**Next** / **End stand-up**). People who are away, at lunch, BRB, **on leave** or in another meeting are skipped; anyone who arrives late joins the end of the line. You can also start one any time.
 
-- **Six rigged 3D characters:** Robo, Knight, Mage, Barbarian, Rogue and Hooded Rogue. Pick one during setup (or later in Settings) and everyone's desk updates straight away. The models are rigged and animated glTF files in `extension/models/` (KayKit Adventurers and three.js RobotExpressive, both CC0 — see `extension/models/CREDITS.md`).
-- **Real animation clips plus a pose layer:** idle, walk, sit, cheer and wave come from the models; Deskmate adds typing at the laptop, a raised hand and head turns on top. Poses settle with springs, so movement has a little overshoot.
+- **Eight original heroes:** Titan, Nova, Bolt, Aegis, Shade, Blaze, Frost and Gizmo. Pick one during setup (or later in Settings) and everyone's desk updates straight away. They're built in code (`extension/lib/critters.js`), with no model files to download, and have longer, more defined faces, with a jaw, chin and cheekbones, instead of round balls. If you'd rather use rigged glTF/Mixamo models, list them in `extension/models/manifest.json` (see `docs/character-pipeline.md`).
+- **Animation:** idle breathing, typing at the laptop, walking, sitting, waving, eating, drinking and a raised hand, with springs so movement has a little overshoot.
 - Up to 4 people share one bench. Bigger teams get a second, staggered row behind so everyone stays large and visible.
-- Everyone sits at the shared desk and types away. Going to lunch, your character **walks over to the café table**. **BRB** walks you to the corner and a cardboard box drops over you. Going away, your character walks off, your laptop closes and your chair turns. **Focus** pops a *Do Not Disturb* board up on your desk and powers you up: a burst of light and a shockwave, then a flickering energy aura with rising sparks for as long as you're focusing.
+- Everyone sits at the shared desk and types away. Going to lunch, your character **walks over to the dining & café annex**. **BRB** walks you to the corner and a cardboard box drops over you. Going away, your character walks off, your laptop closes and your chair turns. **Focus** pops a *Do Not Disturb* board up on your desk and powers you up: a burst of light and a shockwave, then a flickering energy aura with rising sparks for as long as you're focusing.
 - Raised hand plus a bouncing **Needs help** tag when someone asks for help.
 - Emoji reactions (👋 👍 🎉 ☕ 😂) float above your head on everyone's screen.
-- Drag to look around, scroll to zoom, double-click to reset. Light and dark mode follow your system.
+- Drag to look around, scroll to zoom. Once you've moved the camera, a **⟲ Reset view** button appears; it eases the view back in on your own character (double-click does the same). Light and dark mode follow your system.
 - Click anyone to see their status, local time and note, with **Wave** and **Call** buttons.
+
+**The office** (new)
+
+<p>
+  <img src="docs/screenshots/meeting-rooms.png" width="480" alt="Glass meeting rooms: each person in a meeting gets their own room with a name sign and a red 'in use' light">
+  <img src="docs/screenshots/dining-room.png" width="480" alt="The dining & café annex: lounge, coffee station, fish tank, shelves and neon lamps">
+</p>
+<p>
+  <img src="docs/screenshots/workstation.png" width="600" alt="Workstations: premium desks, gaming chairs, a personal desk object and a glowing monitor">
+</p>
+
+- **An L-shaped room:** hardwood floor, a window wall, a walnut-slatted back wall with a live wall screen and clock, skirting and trims, and soft contact shadows where floors meet walls. A second arm of the L is the dining & café annex, joined by a curtain.
+- **Meeting rooms:** when you're *In a meeting* (set by hand or synced from Google Chat), your character walks round the bench and into a glass room of their own. The room's sign shows your name, and its light turns red and pulses while it's in use. Free rooms show green. Click a room to open the profile of whoever's inside.
+- **Dining & café:** lunch and coffee breaks happen here, in a lounge with armchairs and poufs, a bigger rug, a floor lamp, a flower vase, a coffee station with a steaming espresso machine and a chalkboard menu, a fish tank, a mountain-and-skyline mural and bookshelves.
+- **Workstations:** every desk has a walnut top with a leather mat, a slim frame and a monitor that glows softly. Each person gets their own **gaming chair** (tinted to their colour) and a **personal desk object** (succulent, framed photo, figurine or book stack) chosen from their ID. Click a desk to open its owner's card.
+- **Lighting:** warm ambient light, sunbeams through the windows that follow *your* time of day and weather (low, long and golden at the edges of the day, short and bright at noon, faint under cloud, a cool glow at night), drifting dust, and **neon standing lamps** in the corners that brighten as daylight fades. It's all cheap fake glow, with a single shadow-casting light, so it stays light on laptops.
+- **Alive:** the robot vacuum plans routes around the furniture and cleans the whole floor (including the dining room), plants sway, steam rises from the coffee, fish swim, and the wall clock shows real time.
+- **Hover and click:** hovering a desk, meeting room or object lights it up and shows a small glass tooltip; clicking opens a card with the person's profile and availability.
+- **UI:** a refined floating name label (smaller, glassy, name-only on narrow windows), a compact reaction bar and a palette of deep navy, blue grey, walnut, warm beige, sage and amber.
 
 **Help → video call in two clicks**
 
@@ -232,6 +251,8 @@ npm run test:calls        # direct call rings + same room + video; Open call reu
 npm run demo              # screenshots of a 6-person desk (light + dark) and the help bubble → test/shots
 ```
 
+To preview the office without a server, serve the repo (`python3 -m http.server`) and open `test/meeting.html?n=6&meet=1,2` (`n` = team size, `meet` = seats in a meeting; add `&hour=20.5` for evening, `&weather=rain`, or `&focus=rooms|annex|desk` for close-ups). `test/critters.html` shows every hero and pose.
+
 The end-to-end test loads the real extension into three Chrome profiles. It checks that statuses sync, that the help bubble appears on an ordinary web page, that clicking **Join** connects both people in the same room with audio, video and screen sharing, that Focus mode suppresses pop-ups, and that **End call** closes it for the other person. The calls test checks direct calls (ringing, same room) and that Open call reuses the room.
 
 ---
@@ -251,15 +272,16 @@ The end-to-end test loads the real extension into three Chrome profiles. It chec
 ```
 extension/   Chrome MV3 extension (load this folder unpacked)
   background.js        service worker: connection, idle, Google Chat, badge, bubbles, call window
-  lib/                 shared: client.js (protocol), characters.js + mixamo.js (rigged models), toon.js (springs), status.js, three.js
-  models/              the six rigged .glb characters + manifest.json + CREDITS.md
-  sidepanel/           the desk UI + setup/settings (also used by the Mac app)
+  lib/                 shared: client.js (protocol), critters.js (the eight heroes), characters.js + mixamo.js (optional rigged models), toon.js (springs), status.js, three.js
+  lib/scene/           the office: furniture.js (desks, gaming chairs, lounge), room.js (L-shaped room, rugs, shelves, lamps, living details), kit.js
+  models/              optional rigged .glb characters (manifest.json is empty by default; manifest.legacy.json lists the old ones) + CREDITS.md
+  sidepanel/           the desk UI (desk3d.js is the 3D office) + setup/settings (also used by the Mac app)
   bubble/              animated help / call / wave pop-up
   call/                the call window: WebRTC audio, video, screen sharing
   content/content.js   injects bubbles into the page you're viewing
 companion/   Electron menu-bar app (macOS first); macfocus.js reads the Mac's Focus state
 server/      room.js (the room logic) + index.js, a Node WebSocket server (+ Dockerfile)
 cloudflare/  the same server on Cloudflare Workers + Durable Objects (free hosting)
-test/        protocol tests, end-to-end + Meet Playwright tests, demo bots, models.html (every character and pose)
-docs/        screenshots
+test/        protocol tests, end-to-end + Meet Playwright tests, demo bots, meeting.html (office preview), critters.html (every hero and pose)
+docs/        screenshots (docs/screenshots/office-*.png etc. are rendered from test/meeting.html)
 ```

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deskmate</title>
+  <link rel="stylesheet" href="../lib/ui.css">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top drag-region">
+      <div class="brand">
+        <span class="logo-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4" width="12.5" height="8.5" rx="1.6"/><path d="M9.75 12.5v3M7 15.5h5.5"/><path class="warm" d="M2.5 19.5h19"/><path class="warm" d="M17.5 11h3.2v2.6a1.6 1.6 0 0 1-1.6 1.6 1.6 1.6 0 0 1-1.6-1.6z"/></svg></span>
+        <div class="brand-txt">
+          <div class="title">Deskmate<span class="team" id="team"></span></div>
+          <div class="sub"><span class="conn" id="conn" title="Connection"></span><span id="sub">Connecting…</span></div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="icon-btn" id="settings" title="Settings" aria-label="Settings">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- not set up yet -->
+    <section class="join card" id="join" hidden>
+      <span class="logo-mark big"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4" width="12.5" height="8.5" rx="1.6"/><path d="M9.75 12.5v3M7 15.5h5.5"/><path class="warm" d="M2.5 19.5h19"/><path class="warm" d="M17.5 11h3.2v2.6a1.6 1.6 0 0 1-1.6 1.6 1.6 1.6 0 0 1-1.6-1.6z"/></svg></span>
+      <h2>Join your team</h2>
+      <p class="muted">Pick a character, enter your team code and you’re on the desk. Takes 20 seconds.</p>
+      <button class="btn primary big" id="joinBtn">Set up Deskmate</button>
+    </section>
+
+    <main id="main" hidden>
+      <section class="stage" id="stage">
+        <div class="stage-fallback" id="stageFallback" hidden>
+          <span>🪴</span><span>3D office needs hardware acceleration.<br>Everything else still works.</span>
+        </div>
+        <div class="me-chip glass" id="meChip"></div>
+        <div class="online-chip glass" id="onlineChip"></div>
+        <div class="reactions" id="reactions" aria-label="Quick reactions">
+          <button data-emoji="👋" title="Wave to everyone">👋</button>
+          <button data-emoji="👍" title="Thumbs up">👍</button>
+          <button data-emoji="🎉" title="Celebrate">🎉</button>
+          <button data-emoji="☕" title="Coffee anyone?">☕</button>
+          <button data-emoji="😂" title="Haha">😂</button>
+        </div>
+      </section>
+
+      <section class="status">
+        <div class="seg" id="status" role="radiogroup" aria-label="My status"></div>
+        <div class="more-menu card" id="moreMenu" role="menu" hidden></div>
+      </section>
+
+      <section class="team-box">
+        <div class="section-title"><span>Team</span><span id="count"></span></div>
+        <ul id="teamList" class="team-list"></ul>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <button class="btn primary big" id="openDesk">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M14 4v16"/></svg>
+        Open full desk
+      </button>
+    </footer>
+  </div>
+  <div class="toast" id="toast" hidden></div>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

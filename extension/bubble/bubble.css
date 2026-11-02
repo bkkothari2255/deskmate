@@ -2,23 +2,23 @@
 html, body { margin: 0; background: transparent; overflow: hidden; }
 body { font: 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
 .bubble {
-  --bg: rgba(255,255,255,.92); --text: #14161b; --muted: #6b7280; --line: rgba(15,23,42,.08); --accent: #f43f5e;
+  --bg: rgba(253,251,247,.9); --text: #182638; --muted: #627284; --line: rgba(24,38,56,.09); --accent: #D45A6E;
   position: relative; margin: 14px 18px 18px 18px; display: flex; gap: 6px; align-items: stretch;
   background: var(--bg); color: var(--text); border-radius: 18px; border: 1px solid var(--line);
   backdrop-filter: blur(16px) saturate(1.4);
-  box-shadow: 0 1px 3px rgba(15,23,42,.08), 0 8px 18px rgba(15,23,42,.14);
+  box-shadow: 0 1px 3px rgba(24,38,56,.08), 0 10px 24px rgba(24,38,56,.16);
   overflow: hidden; min-height: 104px;
   animation: in .45s cubic-bezier(.2,1.2,.3,1) both;
 }
 .bubble.out { animation: out .28s ease-in both; }
 @media (prefers-color-scheme: dark) {
-  .bubble { --bg: rgba(28,31,38,.94); --text: #eef0f4; --muted: #9aa1ad; --line: rgba(255,255,255,.08); }
+  .bubble { --bg: rgba(24,38,56,.92); --text: #E9E4DA; --muted: #9DAAB8; --line: rgba(233,228,218,.09); --accent: #E2788A; }
 }
 @keyframes in { from { transform: translateX(110%) scale(.96); opacity: 0; } }
 @keyframes out { to { transform: translateX(110%); opacity: 0; } }
-.bubble.kind-wave { --accent: #f59e0b; }
-.bubble.kind-invite { --accent: #f43f5e; }
-.bubble.done { --accent: #22c55e; }
+.bubble.kind-wave { --accent: #B98B64; }
+.bubble.kind-invite { --accent: #D45A6E; }
+.bubble.done { --accent: #4E9A6A; }
 .bubble::before {
   content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--accent);
 }
@@ -32,7 +32,7 @@ body { font: 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, 
 .sub { color: var(--muted); font-size: 12.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .acts { display: flex; gap: 6px; margin-top: 8px; }
 .acts button {
-  border: 0; border-radius: 10px; padding: 7px 12px; font: inherit; font-weight: 650; cursor: pointer;
+  border: 0; border-radius: 12px; padding: 7px 12px; font: inherit; font-weight: 650; cursor: pointer;
   transition: transform .08s, filter .15s, background .15s;
 }
 .acts button:active { transform: scale(.96); }

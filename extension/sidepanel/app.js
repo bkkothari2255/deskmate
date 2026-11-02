@@ -1,15 +1,16 @@
 import { bridge } from '../lib/bridge-ext.js';
-import { STATUS, QUICK, PETS, COLORS, SKIN, HAIR, DEFAULT_SERVER, display, initials, since, untilText, localTime, nameFromEmail } from '../lib/status.js';
+import { STATUS, QUICK, PETS, COLORS, SKIN, HAIR, DEFAULT_SERVER, display, initials, since, untilText, localTime, nameFromEmail, isCoffeeBreak } from '../lib/status.js';
 import { weatherEmoji, WEATHER } from '../lib/weather.js';
 import { plantStage, nextStageAt, PLANT_NAMES } from '../lib/plant.js';
 import { Pet } from '../lib/pets.js';
 import { DeskScene } from './desk3d.js';
 import { THREE, addSoftLights, configureRenderer } from '../lib/avatar.js';
-import { makeCharacter, usingModels, characterList } from '../lib/characters.js';
+import * as chars from '../lib/characters.js';
+import { esc, stColor, makeInteract, closeCoffeeChat } from '../lib/deskui.js';
 import { playChime } from '../lib/chime.js';
 
 const $ = (s, r = document) => r.querySelector(s);
-const esc = (s = '') => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const { makeCharacter, usingModels, characterList } = chars;
 const dark = matchMedia('(prefers-color-scheme: dark)');
 
 let state = null;
@@ -25,11 +26,38 @@ let helpDraft = '';
 // subscribe after the whole module has run (state can arrive immediately)
 queueMicrotask(() => bridge.onState((s) => {
   state = s;
+  if (wantSettings && s.configured) { wantSettings = false; editingSettings = true; }
   if (!s.configured || editingSettings) showSetup(!s.configured);
   else showDesk();
 }));
 
+// ------------------------------------------------------------------ "open straight into Settings"
+// Chrome: the popup sets chrome.storage.session.openSettings before opening this panel.
+// Mac: the full window loads ?settings=1 and/or sends an 'open-settings' bridge event.
+let wantSettings = new URLSearchParams(location.search).get('settings') === '1';
+function openSettingsNow() {
+  if (!state) { wantSettings = true; return; }
+  if (!state.configured) return showSetup(true);  // setup is the settings screen until you've joined
+  editingSettings = true;
+  showSetup(false);
+}
+async function checkSettingsFlag() {
+  if (bridge.platform !== 'extension' || !globalThis.chrome?.storage?.session) return;
+  try {
+    const { openSettings } = await chrome.storage.session.get('openSettings');
+    if (!openSettings) return;
+    await chrome.storage.session.remove('openSettings');
+    openSettingsNow();
+  } catch {}
+}
+if (bridge.platform === 'extension' && globalThis.chrome?.storage?.session) {
+  checkSettingsFlag();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkSettingsFlag(); });
+  chrome.storage.onChanged.addListener((ch, area) => { if (area === 'session' && ch.openSettings?.newValue) checkSettingsFlag(); });
+}
+
 bridge.onEvent((e) => {
+  if (e.type === 'open-settings') openSettingsNow();
   if (e.type === 'react') scene?.react(e.from, e.emoji);
   if (e.type === 'toast') toast(e.text);
   if (e.type === 'call:ended' && e.reason === 'declined' && e.byName) toast(`${e.byName} can't talk right now`);
@@ -54,9 +82,10 @@ function showDesk() {
   $('#desk').hidden = false;
   if (!scene && !scene3dFailed && !LITE) {
     try {
-      scene = new DeskScene($('#stage'), { onSelect: openCard, dark: dark.matches });
+      scene = new DeskScene($('#stage'), { onSelect: openCard, onInteract, dark: dark.matches, compact: false, onViewDirty: (d) => { const b = $('#resetView'); if (b) b.hidden = !d; } });
       globalThis.__deskScene = scene; // handy for debugging / tests
       dark.addEventListener('change', () => scene.setTheme(dark.matches));
+      $('#resetView')?.addEventListener('click', () => scene.resetView());
       setTimeout(() => { $('#stageHint').style.opacity = 0; }, 5000);
     } catch (e) {
       // no WebGL (very old GPU / disabled hardware acceleration): the list still works
@@ -78,7 +107,7 @@ function render() {
   conn.className = 'conn ' + s.conn;
   const here = s.members.filter(m => STATUS[m.state]?.present).length;
   $('#teamSub').textContent = {
-    online: `${here} of ${s.members.length} at their desks`,
+    online: `Online · ${here} of ${s.members.length} at their desks`,
     connecting: 'Connecting…',
     offline: 'Reconnecting…',
     error: errorText(s.error),
@@ -129,7 +158,7 @@ function renderQuick(me) {
       const b = document.createElement('button');
       b.setAttribute('role', 'radio');
       b.dataset.state = key;
-      b.style.setProperty('--c', STATUS[key].color);
+      b.style.setProperty('--c', stColor(key));
       b.innerHTML = `<span class="e">${STATUS[key].emoji}</span><span>${STATUS[key].short}</span>`;
       b.title = STATUS[key].label;
       b.onclick = () => {
@@ -148,8 +177,9 @@ function renderQuick(me) {
   const meta = $('#meMeta');
   if (!me) { meta.innerHTML = ''; return; }
   const st = STATUS[me.state] || STATUS.desk;
-  let left = `${st.label}${me.source && me.source !== 'manual' ? ' <span class="chip">auto</span>' : ''} · ${since(me.since)}`;
-  if (me.until) left = `${st.label} · ${untilText(me.until)}`;
+  const label = isCoffeeBreak(me) ? 'Coffee break ☕' : st.label;
+  let left = `${label}${me.source && me.source !== 'manual' ? ' <span class="chip">auto</span>' : ''} · ${since(me.since)}`;
+  if (me.until) left = `${label} · ${untilText(me.until)}`;
   const right = me.state === 'lunch' || me.state === 'brb'
     ? `<button class="chip" data-extend="15">+15m</button>`
     : `<button class="chip" id="msgBtn">${me.message ? esc(me.message) : 'Set a note'}</button>`;
@@ -244,11 +274,11 @@ function renderFeed(s) {
     if (helpCalls.has(c.callId) || !c.participants.length) continue;
     if (me && c.participants.includes(me.id)) continue;
     const names = c.participants.map(id => s.members.find(m => m.id === id)?.name || '…');
-    items.push(`<div class="req"><div class="av" style="--c:#14b8a6">🎙️</div>
+    items.push(`<div class="req"><div class="av" style="--c:var(--st-call)">🎙️</div>
       <div class="txt"><b>Huddle in progress</b><span>${esc(names.join(', '))}</span></div>
       <button class="btn" data-join="${c.callId}">Join</button></div>`);
   }
-  const html = items.join('');
+  const html = items.length ? `<div class="section-title"><span>Activity</span><span>${items.length}</span></div>${items.join('')}` : '';
   if (feed.dataset.k === html) return;
   feed.dataset.k = html;
   feed.innerHTML = html;
@@ -267,9 +297,9 @@ function renderPeople(s) {
     .sort((a, b) => (a.m.id === s.me?.id ? -1 : b.m.id === s.me?.id ? 1 : 0) || (order[a.d.key] - order[b.d.key]) || a.m.name.localeCompare(b.m.name));
   const html = rows.map(({ m, d }) => {
     const isMe = m.id === s.me?.id;
-    const sub = [d.label, m.until ? untilText(m.until) : since(m.since), m.message].filter(Boolean).map(esc).join(' · ');
+    const sub = [isCoffeeBreak(m) ? 'Coffee break' : d.label, m.until ? untilText(m.until) : since(m.since), m.message].filter(Boolean).map(esc).join(' · ');
     return `<li data-id="${esc(m.id)}" class="${STATUS[m.state]?.present ? '' : 'away'}">
-      <div class="av" style="--c:${m.color}">${initials(m.name)}<span class="ring" style="--s:${d.color}"></span></div>
+      <div class="av" style="--c:${esc(m.color || '')}">${initials(m.name)}<span class="ring" style="--s:${stColor(d.key, d.color)}"></span></div>
       <div class="txt"><b>${esc(m.name)}${isMe ? ' <span class="muted">(you)</span>' : ''}</b><span>${d.emoji} ${sub}</span></div>
       <span class="time">${m.weather ? weatherEmoji(m.weather) + ' ' : ''}${localTime(m.tz)}</span>
       ${isMe ? '' : `<span class="q"><button data-wave title="Wave">👋</button><button data-call title="Call">📞</button></span>`}
@@ -297,7 +327,7 @@ function openCard(id) {
   const isMe = m.id === state.me?.id;
   const help = state.helps.find(h => h.from === m.id && !h.claimedBy);
   card.innerHTML = `
-    <div class="who"><div class="av" style="--c:${m.color}">${initials(m.name)}<span class="ring" style="--s:${d.color}"></span></div>
+    <div class="who"><div class="av" style="--c:${esc(m.color || '')}">${initials(m.name)}<span class="ring" style="--s:${stColor(d.key, d.color)}"></span></div>
       <div><b>${esc(m.name)}</b><span class="muted small">${d.emoji} ${esc(d.label)} · ${m.until ? untilText(m.until) : since(m.since)}</span></div></div>
     <p class="meta">${[m.message && '“' + esc(m.message) + '”', localTime(m.tz) && `${localTime(m.tz)} local`, m.weather && `${weatherEmoji(m.weather)} ${m.weather.temp ?? ''}°${m.weather.place ? ' in ' + esc(m.weather.place) : ''}`, m.source === 'gchat' && 'via Google Chat'].filter(Boolean).join(' · ') || '&nbsp;'}</p>
     <p class="plant-line">🌱 ${PLANT_NAMES[plantStage(m.plant)]} · helped ${m.helped || 0} · ${m.kudos || 0} kudos${nextStageAt(m.plant) ? ` · ${nextStageAt(m.plant) - (m.plant || 0)} to grow` : ''}</p>
@@ -332,6 +362,16 @@ function wave(id) {
 }
 function call(id) { bridge.action('call', { to: id }); }
 
+// clicks on things in the 3D office (laptop, cup, table…)
+function focusStatus() {
+  const bar = $('#meBar');
+  bar.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  bar.classList.remove('attn'); void bar.offsetWidth; bar.classList.add('attn');
+  setTimeout(() => bar.classList.remove('attn'), 2400);
+  bar.querySelector('[aria-checked=true]')?.focus({ preventScroll: true });
+}
+const onInteract = makeInteract({ bridge, getState: () => state, toast, focusStatus });
+
 $('#reactions').addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;
@@ -344,7 +384,7 @@ $('#copyCode').onclick = async () => {
   try { await navigator.clipboard.writeText(text); toast('Invite copied — paste it to a teammate'); }
   catch { toast(`Team code: ${state.team}`); }
 };
-$('#openSettings').onclick = () => { editingSettings = true; showSetup(false); };
+$('#openSettings').onclick = () => { closeCoffeeChat(); editingSettings = true; showSetup(false); };
 $('#closeSettings').onclick = () => { editingSettings = false; showDesk(); };
 
 // refresh relative times
@@ -437,7 +477,11 @@ function startPreview() {
   const sc = new THREE.Scene();
   addSoftLights(sc, { shadows: false });
   const cam = new THREE.PerspectiveCamera(30, 140 / 180, 0.1, 20);
-  if (usingModels) { cam.position.set(0, 0.85, 3.9); cam.lookAt(0, 0.62, 0); } else { cam.position.set(0, 1.25, 3.55); cam.lookAt(0, 1.0, 0); }
+  // the characters module may suggest a framing; otherwise our defaults
+  const v3 = (p) => Array.isArray(p) ? p : [p.x, p.y, p.z];
+  const pc = chars.PREVIEW_CAMERA;
+  if (pc?.pos && pc?.look) { cam.position.set(...v3(pc.pos)); cam.lookAt(...v3(pc.look)); }
+  else if (usingModels) { cam.position.set(0, 0.85, 3.9); cam.lookAt(0, 0.62, 0); } else { cam.position.set(0, 1.25, 3.55); cam.lookAt(0, 1.0, 0); }
   preview = { r, sc, cam, av: null, t: 0 };
   rebuildPreview();
   const clock = new THREE.Clock();

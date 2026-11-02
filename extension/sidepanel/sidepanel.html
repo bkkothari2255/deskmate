@@ -11,11 +11,11 @@
   <!-- ===== Main desk view ===== -->
   <main id="desk" hidden>
     <header class="top">
-      <div class="team">
-        <span class="conn" id="conn" title="Connection"></span>
-        <div>
-          <div class="team-name" id="teamName">Team</div>
-          <div class="team-sub" id="teamSub">Connecting…</div>
+      <div class="brand">
+        <span class="logo-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4" width="12.5" height="8.5" rx="1.6"/><path d="M9.75 12.5v3M7 15.5h5.5"/><path class="warm" d="M2.5 19.5h19"/><path class="warm" d="M17.5 11h3.2v2.6a1.6 1.6 0 0 1-1.6 1.6 1.6 1.6 0 0 1-1.6-1.6z"/></svg></span>
+        <div class="brand-txt">
+          <div class="team-name"><span class="app">Deskmate</span><span class="sep">/</span><span id="teamName">Team</span></div>
+          <div class="team-sub"><span class="conn" id="conn" title="Connection"></span><span id="teamSub">Connecting…</span></div>
         </div>
       </div>
       <div class="top-actions">
@@ -30,8 +30,9 @@
 
     <div class="server-warn" id="serverWarn" hidden>⚠️ The Deskmate server is out of date, so calls may not connect. Whoever runs it: <code>npm run deploy</code> in <code>cloudflare/</code>.</div>
     <section class="stage" id="stage">
-      <div class="stage-hint" id="stageHint">Drag to look around · right-drag or shift-drag to move · scroll to zoom · double-click to reset</div>
-      <div class="reactions" id="reactions">
+      <div class="stage-hint" id="stageHint">Drag to look around · right-drag or shift-drag to move · scroll to zoom · double-click to reset · click the laptop, cup or table</div>
+      <button class="reset-view" id="resetView" type="button" hidden title="Back to my character (or double-click the office)">⟲ Reset view</button>
+      <div class="reactions" id="reactions" aria-label="Quick reactions">
         <button data-emoji="👋" title="Wave to everyone">👋</button>
         <button data-emoji="👍">👍</button>
         <button data-emoji="🎉">🎉</button>
@@ -43,7 +44,8 @@
 
     <section class="standup-bar" id="standupBar" hidden></section>
 
-    <section class="me-bar">
+    <section class="me-bar card" id="meBar">
+      <div class="section-title"><span>Your status</span><span id="meClock"></span></div>
       <div class="seg" id="quick" role="radiogroup" aria-label="My status"></div>
       <div class="me-meta" id="meMeta"></div>
     </section>
@@ -52,7 +54,7 @@
 
     <section class="feed" id="feed"></section>
 
-    <section class="people">
+    <section class="people card">
       <div class="section-title"><span>Team</span><span id="counts" class="muted"></span></div>
       <ul id="people"></ul>
     </section>
@@ -61,8 +63,8 @@
   <!-- ===== Setup / settings ===== -->
   <main id="setup" hidden>
     <header class="top">
-      <div class="team">
-        <div class="logo">🪑</div>
+      <div class="brand">
+        <span class="logo-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4" width="12.5" height="8.5" rx="1.6"/><path d="M9.75 12.5v3M7 15.5h5.5"/><path class="warm" d="M2.5 19.5h19"/><path class="warm" d="M17.5 11h3.2v2.6a1.6 1.6 0 0 1-1.6 1.6 1.6 1.6 0 0 1-1.6-1.6z"/></svg></span>
         <div>
           <div class="team-name" id="setupTitle">Join your team desk</div>
           <div class="team-sub">Takes 20 seconds.</div>

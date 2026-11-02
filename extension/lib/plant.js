@@ -1,7 +1,9 @@
 // Desk plant: grows a stage each time you help someone or get kudos.
 // Stages: seed sprout → seedling → little plant → leafy → bushy with a bud → first flowers →
 // in full bloom → a small potted tree.
+// Built from simple shapes, then flattened into ONE vertex-coloured mesh (one draw call per plant).
 import { THREE } from './avatar.js';
+import { flattenMeshes } from './scene/kit.js';
 
 export const PLANT_STAGES = [0, 1, 3, 6, 10, 16, 25, 40];   // points needed for each stage
 export const PLANT_NAMES = ['Sprout', 'Seedling', 'Little plant', 'Leafy', 'Bushy', 'First flowers', 'Full bloom', 'Little tree'];
@@ -16,12 +18,15 @@ export function nextStageAt(points = 0) {
   return s < PLANT_STAGES.length - 1 ? PLANT_STAGES[s + 1] : null;
 }
 
-const mat = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.7, ...o });
+// colour holders only (the final mesh uses vertex colours); calm, natural palette
+const mat = (color) => ({ color: new THREE.Color(color) });
 let M = null;
 const mats = () => (M ||= {
-  pot: mat('#E07A5F'), rim: mat('#C8664D'), soil: mat('#5B4334'), stem: mat('#4F9D52'),
-  leaf: mat('#5CBF6A'), leaf2: mat('#3E9C55'), petal: mat('#FF8FB1'), petal2: mat('#FFD166'), core: mat('#FFE08A'), trunk: mat('#8A5A3B'),
+  pot: mat('#D9CBB8'), rim: mat('#C9B9A3'), soil: mat('#5B4636'), stem: mat('#5E8A63'),
+  leaf: mat('#6F9A78'), leaf2: mat('#557F66'), petal: mat('#E3A3AE'), petal2: mat('#E8C77A'), core: mat('#F1DCA0'), trunk: mat('#8C6649'),
 });
+let VC = null;
+const plantMaterial = () => VC ||= new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0 });
 
 function leaf(group, m, x, y, z, ry, size = 1, tilt = 0.9) {
   const g = new THREE.Group();
@@ -53,7 +58,7 @@ function flower(group, x, y, z, petalMat, size = 1) {
   return f;
 }
 
-export function buildPlant(stage) {
+function buildParts(stage) {
   const M = mats();
   const g = new THREE.Group();
   const big = stage >= 7;
@@ -106,5 +111,19 @@ export function buildPlant(stage) {
     }
   }
   g.userData.height = top + stemH + 0.03;
+  return g;
+}
+
+/** A desk plant for a growth stage: a Group holding one merged mesh; userData.height = its height. */
+export function buildPlant(stage) {
+  const src = buildParts(stage);
+  const geo = flattenMeshes(src);
+  src.traverse(o => o.geometry?.dispose());
+  const g = new THREE.Group();
+  const mesh = new THREE.Mesh(geo, plantMaterial());
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  g.add(mesh);
+  g.userData.height = src.userData.height;
   return g;
 }

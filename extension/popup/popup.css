@@ -1,0 +1,132 @@
+/* Compact Deskmate: the Chrome toolbar popup, and the Mac app's floating mini office.
+   Fixed 360×580 in Chrome; fluid (≈300×420 … 420×700) in the Mac window. */
+html, body { height: 100%; }
+html.ext-popup { width: 360px; height: 580px; }
+body { overflow: hidden; }
+.app { display: flex; flex-direction: column; height: 100%; }
+
+/* ---- header (drag region in the Mac window; buttons stay clickable) ---- */
+.top {
+  flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 10px 8px 12px;
+}
+.brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.brand-txt { min-width: 0; }
+.title { font-weight: 650; font-size: 14px; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.title .team:not(:empty)::before { content: "/"; color: var(--faint); font-weight: 400; margin: 0 5px; }
+.title .team { color: var(--muted); font-weight: 600; }
+.sub { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; }
+.actions { display: flex; gap: 2px; flex: none; }
+
+main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 0 10px; }
+
+/* ---- compact 3D office ---- */
+.stage {
+  flex: none; position: relative; height: clamp(150px, 40vh, 260px);
+  border-radius: var(--r-lg); overflow: hidden; border: 1px solid var(--line); box-shadow: var(--shadow);
+  background: radial-gradient(120% 85% at 50% 0%, color-mix(in srgb, var(--sky, var(--soft-blue)) var(--sky-mix, 18%), var(--surface)) 0%, var(--surface) 70%);
+  transition: background 2s;
+}
+.stage .label { font-size: 10px; padding: 2px 7px 2px 5px; }
+.stage .label .st { display: none; }
+.stage .glass { position: absolute; z-index: 3; border-radius: var(--r-pill); box-shadow: var(--shadow-sm); font-size: 11px; }
+.me-chip { left: 8px; top: 8px; max-width: calc(100% - 110px); display: flex; align-items: center; gap: 6px; padding: 4px 4px 4px 8px; }
+.me-chip:empty, .online-chip:empty { display: none; }
+.me-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--s); box-shadow: 0 0 0 3px color-mix(in srgb, var(--s) 22%, transparent); flex: none; }
+.me-chip .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.me-chip .t small { font-weight: 500; color: var(--muted); font-size: 11px; }
+.me-chip button { border: 0; background: var(--surface-2); border-radius: var(--r-pill); padding: 1px 7px; font-size: 10.5px; font-weight: 600; flex: none; }
+.me-chip button:hover { background: var(--surface-3); }
+.me-chip:not(:has(button)) { padding-right: 9px; }
+.online-chip { right: 8px; top: 8px; padding: 4px 9px; display: flex; align-items: center; gap: 5px; font-weight: 600; color: var(--muted); }
+.online-chip b { color: var(--text); }
+.stage .reactions { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); z-index: 3; }
+.stage-fallback {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  text-align: center; font-size: 11.5px; color: var(--muted); padding: 30px 20px 44px;
+}
+.stage-fallback span:first-child { font-size: 26px; }
+
+/* ---- status selector ---- */
+.status { flex: none; position: relative; }
+.seg {
+  display: grid; grid-template-columns: repeat(5, 1fr) 34px; gap: 2px; padding: 3px;
+  background: var(--surface-2); border-radius: var(--r); border: 1px solid var(--line);
+}
+.seg button {
+  --c: var(--accent);
+  border: 0; background: transparent; border-radius: 9px; padding: 6px 1px 5px; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 10.5px; font-weight: 600; color: var(--muted);
+  transition: background .15s, color .15s, transform .1s var(--ease), box-shadow .15s;
+}
+.seg button .e { font-size: 16px; line-height: 1; filter: grayscale(.5); opacity: .85; transition: filter .15s, transform .15s var(--ease), opacity .15s; }
+.seg button .l { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.seg button:hover { color: var(--text); }
+.seg button:hover .e { transform: translateY(-1px); opacity: 1; }
+.seg button:active { transform: scale(.95); }
+.seg button[aria-checked="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm), inset 0 -2px 0 var(--c); }
+.seg button[aria-checked="true"] .e { filter: none; opacity: 1; }
+.seg .more { justify-content: center; font-size: 16px; letter-spacing: 1px; }
+.status.attn .seg { animation: dm-attn 1.2s var(--ease) 2; }
+
+.more-menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 170px; padding: 4px;
+  background: var(--glass-strong); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--shadow-lg);
+  border-radius: var(--r); animation: popin .14s var(--ease);
+}
+.more-menu button {
+  display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: transparent; text-align: left;
+  padding: 7px 9px; border-radius: var(--r-sm); font-size: 12.5px; font-weight: 550;
+}
+.more-menu button:hover { background: var(--surface-2); }
+.more-menu button[aria-checked="true"] { color: var(--accent); }
+.more-menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
+.more-menu input { width: 100%; border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: var(--r-sm); padding: 6px 8px; font: inherit; font-size: 12px; outline: none; }
+.more-menu input:focus { border-color: var(--accent); }
+
+/* ---- team list ---- */
+.team-box { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.team-box .section-title { padding: 2px 4px 4px; }
+.team-list { list-style: none; margin: 0; padding: 0 0 4px; overflow-y: auto; flex: 1; min-height: 0; }
+.team-list li { border-radius: var(--r); transition: background .15s; }
+.team-list .row { display: flex; align-items: center; gap: 9px; padding: 5px 6px; cursor: pointer; }
+.team-list li:hover, .team-list li.sel { background: var(--surface-2); }
+.team-list li.flash { animation: dm-attn 1s var(--ease) 1; }
+.team-list .av { width: 26px; height: 26px; font-size: 10px; }
+.team-list .av .ring { width: 10px; height: 10px; }
+.team-list .txt { flex: 1; min-width: 0; }
+.team-list .txt b { display: block; font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.team-list .txt span { display: block; color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.team-list .q { display: none; gap: 3px; flex: none; }
+.team-list li:hover .q, .team-list li.sel .q { display: flex; }
+.team-list .q button { border: 1px solid var(--line); background: var(--surface); width: 26px; height: 26px; border-radius: var(--r-sm); font-size: 13px; line-height: 1; transition: background .15s, transform .1s; }
+.team-list .q button:hover { background: var(--surface-3); }
+.team-list .q button:active { transform: scale(.93); }
+.team-list li.away { opacity: .62; }
+.team-list .empty { padding: 14px 8px; text-align: center; color: var(--muted); font-size: 12px; cursor: default; }
+.team-list .empty:hover { background: transparent; }
+
+/* ---- join card ---- */
+.join { margin: 6px 12px; padding: 22px 18px 18px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.join .logo-mark.big { width: 48px; height: 48px; border-radius: 14px; margin-bottom: 6px; }
+.join .logo-mark.big svg { width: 28px; height: 28px; }
+.join h2 { margin: 0; font-size: 16px; letter-spacing: -.01em; }
+.join p { margin: 0 0 10px; font-size: 12.5px; }
+
+/* ---- footer ---- */
+.foot { flex: none; padding: 8px 10px 10px; }
+.foot .btn.big { padding: 9px 12px; font-size: 13px; }
+.foot .btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+.toast { bottom: 62px; }
+
+/* small mini-office windows */
+@media (max-width: 330px) {
+  .seg button .l { display: none; }
+  .seg button { padding: 8px 1px; }
+  .seg button .e { font-size: 17px; }
+}
+@media (max-height: 470px) {
+  .stage { height: clamp(130px, 34vh, 200px); }
+  .foot { padding-top: 4px; }
+}
