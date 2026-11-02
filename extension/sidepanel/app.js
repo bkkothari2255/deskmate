@@ -360,6 +360,7 @@ async function showSetup(firstRun) {
   $('#closeSettings').hidden = firstRun;
   $('#setupTitle').textContent = firstRun ? 'Join your team desk' : 'Settings';
   $('#saveBtn').textContent = firstRun ? 'Join desk' : 'Save';
+  $('#leaveTeam').hidden = firstRun;
   if (draft) return;
   const cur = state?.settings || (await bridge.getSettings()) || {};
   const prof = firstRun ? (await bridge.profile().catch(() => null)) || {} : {};
@@ -476,6 +477,28 @@ $('#suStartNow').addEventListener('click', () => {
   bridge.action('standup:start');
   editingSettings = false;
   showDesk();
+});
+
+// leave the team: clearing the team code disconnects and drops back to the join screen
+// (two taps, since confirm() is unreliable in the side panel)
+let leaveArm = null;
+$('#leaveTeam').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  if (!leaveArm) {
+    btn.classList.add('armed');
+    btn.textContent = `Tap again to leave ${state?.settings?.team || 'the team'}`;
+    leaveArm = setTimeout(() => { leaveArm = null; btn.classList.remove('armed'); btn.textContent = 'Leave team'; }, 4000);
+    return;
+  }
+  clearTimeout(leaveArm); leaveArm = null;
+  btn.classList.remove('armed'); btn.textContent = 'Leave team';
+  const team = state?.settings?.team;
+  editingSettings = false;
+  draft = null;
+  await bridge.saveSettings({ ...(state?.settings || {}), team: '' });
+  if (state) state.configured = false;
+  showSetup(true);
+  if (team) toast(`You left ${team}`);
 });
 
 // preview the sound when it's switched on

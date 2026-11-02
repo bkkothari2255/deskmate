@@ -58,6 +58,9 @@ export class DeskScene {
     this.dark = dark;
     this.zoom = 1;
     this.yaw = 0;
+    this.tilt = 0;                       // user offset on top of the framed elevation
+    this.pan = new THREE.Vector3();      // user offset of the look-at point, on the floor
+    this.extent = { x: 3, z: 3 };        // how far the view may pan (set when framing)
     this.radius = 3;
 
     const r = this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
@@ -207,6 +210,8 @@ export class DeskScene {
     }
     const elev = this.elev = this.seatTransform(n - 1, n).row > 0 ? 0.66 : 0.55;
     this.target = new THREE.Vector3((minX + maxX) / 2, 0.7, (minZ + maxZ) / 2);
+    this.extent = { x: (maxX - minX) / 2 + 1.5, z: (maxZ - minZ) / 2 + 1.5 };
+    this.#clampPan();
     const cam = this.camera;
     cam.aspect = (this.width / this.height) || 1;
     cam.updateProjectionMatrix();
@@ -360,10 +365,19 @@ export class DeskScene {
         { x: 0.95 + Math.cos(i * 0.9) * 0.12, y: 0.42 + (i % 3) * 0.11, z: -0.75 + Math.sin(i * 0.9) * 0.12 });
       leaf.scale.set(1, 1.15, 1);
     }
-    const label = emojiSprite('☕', 0.35);
-    label.position.set(0, 1.25, 0);
-    label.material.opacity = 0.6;
-    group.add(label);
+    // cup and saucer sitting on the table top (top surface at y = 0.75)
+    const TOP = 0.75;
+    add(new THREE.CylinderGeometry(0.11, 0.09, 0.012, 32), M.mug, { x: 0.12, y: TOP + 0.006, z: 0.08 });
+    const cup = add(new THREE.CylinderGeometry(0.065, 0.05, 0.1, 32), M.mug, { x: 0.12, y: TOP + 0.012 + 0.05, z: 0.08 });
+    const coffee = new THREE.Mesh(new THREE.CircleGeometry(0.058, 24), M.coffee);
+    coffee.rotation.x = -Math.PI / 2; coffee.position.y = 0.042;
+    cup.add(coffee);
+    const handle = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.01, 10, 20), M.mug);
+    handle.position.x = 0.068;
+    handle.rotation.y = Math.PI / 2;
+    handle.castShadow = true;
+    outline(handle, M.ink);
+    cup.add(handle);
     // seat slots around the table
     const slots = [];
     for (let i = 0; i < 6; i++) {
@@ -731,14 +745,16 @@ export class DeskScene {
     // camera: gentle drift + user yaw
     const yaw = this.yaw + Math.sin(t * 0.1) * 0.03;
     const dist = this.camDist * this.zoom;
-    const elev = this.elev || 0.62;
+    const elev = THREE.MathUtils.clamp((this.elev || 0.62) + this.tilt, ELEV_MIN, ELEV_MAX);
     if (this.target) {
+      const look = this._look || (this._look = new THREE.Vector3());
+      look.copy(this.target).add(this.pan);
       this.camera.position.set(
-        this.target.x + Math.sin(yaw) * Math.cos(elev) * dist,
-        this.target.y + Math.sin(elev) * dist,
-        this.target.z + Math.cos(yaw) * Math.cos(elev) * dist,
+        look.x + Math.sin(yaw) * Math.cos(elev) * dist,
+        look.y + Math.sin(elev) * dist,
+        look.z + Math.cos(yaw) * Math.cos(elev) * dist,
       );
-      this.camera.lookAt(this.target);
+      this.camera.lookAt(look);
     }
 
     for (const s of this.seats || []) {
@@ -952,23 +968,88 @@ export class DeskScene {
   // ---------- input ----------
   #bindInput() {
     const el = this.renderer.domElement;
+    // left-drag: orbit (sideways) and tilt (up/down)
+    // right-drag, middle-drag or shift+drag: move the view across the floor
+    // two fingers: move + pinch to zoom · scroll / trackpad pinch: zoom · double-click: reset
+    const ptrs = new Map();   // pointerId -> {x, y}
     let drag = null;
-    el.addEventListener('pointerdown', e => { drag = { x: e.clientX, yaw: this.yaw, moved: false }; el.setPointerCapture(e.pointerId); });
+    const start = (e) => {
+      const pts = [...ptrs.values()];
+      if (pts.length >= 2) {
+        const [a, b] = pts;
+        drag = { mode: 'touch2', mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom: this.zoom, moved: true };
+      } else {
+        const pan = e.button === 1 || e.button === 2 || e.shiftKey;
+        drag = { mode: pan ? 'pan' : 'orbit', x: e.clientX, y: e.clientY, yaw: this.yaw, tilt: this.tilt, moved: false };
+      }
+    };
+    el.addEventListener('contextmenu', e => e.preventDefault());
+    el.addEventListener('pointerdown', e => {
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      el.setPointerCapture(e.pointerId);
+      start(e);
+    });
     el.addEventListener('pointermove', e => {
-      if (!drag) return;
-      const dx = e.clientX - drag.x;
-      if (Math.abs(dx) > 3) drag.moved = true;
-      this.yaw = Math.max(-0.6, Math.min(0.6, drag.yaw - dx * 0.005));
+      if (!ptrs.has(e.pointerId) || !drag) return;
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (drag.mode === 'touch2') {
+        const [a, b] = [...ptrs.values()];
+        if (!b) return;
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        this.#panBy(mx - drag.mx, my - drag.my);
+        drag.mx = mx; drag.my = my;
+        const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+        this.zoom = clampZoom(drag.zoom * (drag.d / d));
+        return;
+      }
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) drag.moved = true;
+      if (drag.mode === 'pan') {
+        this.#panBy(dx, dy);
+        drag.x = e.clientX; drag.y = e.clientY;
+      } else {
+        this.yaw = THREE.MathUtils.clamp(drag.yaw - dx * 0.006, -YAW_MAX, YAW_MAX);
+        const base = this.elev || 0.62;
+        this.tilt = THREE.MathUtils.clamp(drag.tilt + dy * 0.005, ELEV_MIN - base, ELEV_MAX - base);
+      }
     });
-    el.addEventListener('pointerup', e => {
-      if (drag && !drag.moved) this.#pick(e);
-      drag = null;
-    });
+    const end = (e) => {
+      const wasClick = drag && !drag.moved && drag.mode === 'orbit' && ptrs.size === 1;
+      ptrs.delete(e.pointerId);
+      if (wasClick && e.type === 'pointerup') this.#pick(e);
+      if (ptrs.size) { const [id] = ptrs.keys(); const p = ptrs.get(id); start({ clientX: p.x, clientY: p.y, button: 0 }); drag.mode = 'pan'; drag.moved = true; }
+      else drag = null;
+    };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
     el.addEventListener('wheel', e => {
       e.preventDefault();
-      this.zoom = Math.max(0.55, Math.min(1.4, this.zoom * (1 + e.deltaY * 0.001)));
+      // trackpad pinch arrives as ctrl+wheel with small deltas; make it as quick as a wheel notch
+      const k = e.ctrlKey ? 0.01 : 0.001;
+      this.zoom = clampZoom(this.zoom * (1 + e.deltaY * k));
     }, { passive: false });
-    el.addEventListener('dblclick', () => { this.yaw = 0; this.zoom = 1; });
+    el.addEventListener('dblclick', () => { this.yaw = 0; this.tilt = 0; this.zoom = 1; this.pan.set(0, 0, 0); });
+  }
+
+  // move the look-at point so the floor follows the cursor
+  #panBy(dx, dy) {
+    if (!this.height) return;
+    const dist = this.camDist * this.zoom;
+    const perPx = (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2) * dist) / this.height;
+    const elev = THREE.MathUtils.clamp((this.elev || 0.62) + this.tilt, ELEV_MIN, ELEV_MAX);
+    const yaw = this.yaw;
+    // screen-right and screen-up, flattened onto the floor (up is stretched by the viewing angle)
+    const rx = Math.cos(yaw), rz = -Math.sin(yaw);
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+    const upScale = 1 / Math.max(0.35, Math.sin(elev));
+    this.pan.x += -rx * dx * perPx + fx * dy * perPx * upScale;
+    this.pan.z += -rz * dx * perPx + fz * dy * perPx * upScale;
+    this.#clampPan();
+  }
+
+  #clampPan() {
+    this.pan.x = THREE.MathUtils.clamp(this.pan.x, -this.extent.x, this.extent.x);
+    this.pan.z = THREE.MathUtils.clamp(this.pan.z, -this.extent.z, this.extent.z);
   }
 
   #pick(e) {
@@ -1005,6 +1086,11 @@ export class DeskScene {
     this.renderer.dispose();
   }
 }
+
+const YAW_MAX = 1.35;                 // ~77° either way
+const ELEV_MIN = 0.18, ELEV_MAX = 1.4; // from almost eye-level to almost straight down
+const ZOOM_MIN = 0.35, ZOOM_MAX = 2.4;
+const clampZoom = (z) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
 
 function lerpAngle(a, b, k) {
   let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;

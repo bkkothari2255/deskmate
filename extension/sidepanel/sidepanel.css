@@ -28,7 +28,7 @@ main { display: flex; flex-direction: column; min-height: 100vh; }
 .stage canvas { display: block; touch-action: none; cursor: grab; }
 .stage canvas:active { cursor: grabbing; }
 .stage-hint {
-  position: absolute; left: 12px; bottom: 10px; font-size: 11px; color: var(--muted); z-index: 2;
+  position: absolute; left: 12px; right: 12px; bottom: 10px; font-size: 11px; color: var(--muted); z-index: 2;
   pointer-events: none; transition: opacity .6s;
 }
 .labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 1; }
@@ -195,6 +195,8 @@ main { display: flex; flex-direction: column; min-height: 100vh; }
 .acts-row { display: flex; gap: 6px; flex: none; }
 .btn.end { background: var(--danger); border-color: transparent; color: #fff; }
 .btn.end:hover { filter: brightness(1.07); background: var(--danger); }
+.btn.leave { width: 100%; background: transparent; border-color: color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger); }
+.btn.leave:hover, .btn.leave.armed { background: var(--danger); border-color: transparent; color: #fff; }
 
 /* ---- stand-up ---- */
 .standup-bar {

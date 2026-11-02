@@ -30,7 +30,7 @@
 
     <div class="server-warn" id="serverWarn" hidden>⚠️ The Deskmate server is out of date, so calls may not connect. Whoever runs it: <code>npm run deploy</code> in <code>cloudflare/</code>.</div>
     <section class="stage" id="stage">
-      <div class="stage-hint" id="stageHint">Drag to look around · scroll to zoom</div>
+      <div class="stage-hint" id="stageHint">Drag to look around · right-drag or shift-drag to move · scroll to zoom · double-click to reset</div>
       <div class="reactions" id="reactions">
         <button data-emoji="👋" title="Wave to everyone">👋</button>
         <button data-emoji="👍">👍</button>
@@ -113,6 +113,7 @@
       </details>
       <button class="btn primary big" type="submit" id="saveBtn">Join desk</button>
       <p class="muted small" id="setupErr"></p>
+      <button type="button" class="btn leave" id="leaveTeam" hidden>Leave team</button>
     </form>
   </main>
 
