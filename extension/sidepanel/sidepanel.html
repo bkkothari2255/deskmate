@@ -31,6 +31,18 @@
     <div class="server-warn" id="serverWarn" hidden>⚠️ The Deskmate server is out of date, so calls may not connect. Whoever runs it: <code>npm run deploy</code> in <code>cloudflare/</code>.</div>
     <section class="stage" id="stage">
       <div class="stage-hint" id="stageHint">Drag to look around · right-drag or shift-drag to move · scroll to zoom · double-click to reset · click the laptop, cup or table</div>
+      <button class="info-btn" id="viewInfoBtn" type="button" hidden aria-label="How to move around the 3D office" aria-expanded="false" aria-controls="viewInfo" title="How to move around">i</button>
+      <div class="view-info card" id="viewInfo" role="dialog" aria-label="3D view controls" hidden>
+        <div class="vi-title">Moving around the office</div>
+        <ul>
+          <li><b>Look around</b><span>Click &amp; drag</span></li>
+          <li><b>Move the view</b><span>Right-drag or Shift + drag</span></li>
+          <li><b>Zoom</b><span>Scroll or pinch</span></li>
+          <li><b>Touch</b><span>1 finger look · 2 fingers zoom &amp; move</span></li>
+          <li><b>Reset</b><span>Double-click the office</span></li>
+          <li><b>Interact</b><span>Click a person, laptop, cup or table</span></li>
+        </ul>
+      </div>
       <button class="reset-view" id="resetView" type="button" hidden title="Back to my character (or double-click the office)">⟲ Reset view</button>
       <div class="reactions" id="reactions" aria-label="Quick reactions">
         <button data-emoji="👋" title="Wave to everyone">👋</button>

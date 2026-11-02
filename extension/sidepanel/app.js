@@ -87,6 +87,12 @@ function showDesk() {
       dark.addEventListener('change', () => scene.setTheme(dark.matches));
       $('#resetView')?.addEventListener('click', () => scene.resetView());
       setTimeout(() => { $('#stageHint').style.opacity = 0; }, 5000);
+      const infoBtn = $('#viewInfoBtn'), infoBox = $('#viewInfo');
+      infoBtn.hidden = false;   // only useful when the 3D view is running
+      const setInfo = (open) => { infoBox.hidden = !open; infoBtn.setAttribute('aria-expanded', String(open)); };
+      infoBtn.addEventListener('click', (e) => { e.stopPropagation(); setInfo(infoBox.hidden); });
+      document.addEventListener('pointerdown', (e) => { if (!infoBox.hidden && !infoBox.contains(e.target) && e.target !== infoBtn) setInfo(false); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !infoBox.hidden) { setInfo(false); infoBtn.focus(); } });
     } catch (e) {
       // no WebGL (very old GPU / disabled hardware acceleration): the list still works
       console.warn('3D desk unavailable', e);

@@ -601,7 +601,7 @@ export class DeskScene {
     this.scene.add(this.shell.group);
     if (this.live) { this.scene.remove(this.live.group); for (const o of this.live.own) o.dispose?.(); }
     // things the robot vacuum must steer around
-    const obs = [];
+    const obs = [...(this.shell.obstacles || [])];
     for (const st of this.seats || []) obs.push({ x0: st.x - 0.75, x1: st.x + 0.75, z0: st.z - 0.6, z1: st.z + 1.05 });
     for (const x of this.meet?.xs || []) obs.push({ x0: x - 0.95, x1: x + 0.95, z0: this.meet.z - 0.9, z1: this.meet.z + 1.15 });
     const lg = this.cafe.group.position, LE = LOUNGE.extent;

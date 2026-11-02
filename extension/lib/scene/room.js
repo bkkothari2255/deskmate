@@ -70,7 +70,20 @@ function textures() {
   h.fillStyle = '#EAF1FF'; h.font = '600 64px -apple-system, Segoe UI, sans-serif'; h.textAlign = 'center'; h.textBaseline = 'middle';
   h.fillText('DESKMATE', 256, 74);
   h.fillStyle = '#6FA2FF'; h.fillRect(150, 118, 212, 4);
-  CACHE = { floor: tex(f), floor2: tex(f2), slats: tex(s), screen: tex(t), mural: tex(mu), sign: tex(sg) };
+  // whiteboard: glossy white with faint marker doodles (a flow, sticky notes, a sketch)
+  const wb = canvas(512, 340), W = wb.getContext('2d');
+  const wg = W.createLinearGradient(0, 0, 512, 340); wg.addColorStop(0, '#FDFDFB'); wg.addColorStop(1, '#ECEFF2');
+  W.fillStyle = wg; W.fillRect(0, 0, 512, 340);
+  W.lineCap = 'round'; W.lineJoin = 'round'; W.lineWidth = 4;
+  W.strokeStyle = '#3F6FA8'; W.fillStyle = '#3F6FA8';
+  W.strokeRect(40, 50, 110, 56); W.strokeRect(200, 50, 110, 56); W.strokeRect(360, 50, 110, 56);
+  for (const [x0, x1] of [[150, 200], [310, 360]]) { W.beginPath(); W.moveTo(x0, 78); W.lineTo(x1 - 4, 78); W.stroke(); W.beginPath(); W.moveTo(x1 - 14, 70); W.lineTo(x1 - 2, 78); W.lineTo(x1 - 14, 86); W.stroke(); }
+  W.strokeStyle = '#C4553A'; W.beginPath(); W.moveTo(255, 106); W.bezierCurveTo(255, 150, 120, 140, 95, 190); W.stroke();
+  for (const [x, y, c] of [[50, 200, '#F6E27A'], [190, 215, '#F4B8C8'], [330, 195, '#A9DCC0']]) { W.fillStyle = c; W.fillRect(x, y, 96, 86); }
+  W.strokeStyle = '#2B303A'; W.lineWidth = 3;
+  for (const [x, y] of [[50, 200], [190, 215], [330, 195]]) for (let i = 0; i < 3; i++) { W.beginPath(); W.moveTo(x + 12, y + 24 + i * 20); W.lineTo(x + 60 + (i % 2) * 14, y + 24 + i * 20); W.stroke(); }
+  W.strokeStyle = '#3F6FA8'; W.lineWidth = 4; W.beginPath(); W.moveTo(440, 300); W.lineTo(450, 260); W.lineTo(465, 285); W.lineTo(482, 235); W.stroke();
+  CACHE = { floor: tex(f), floor2: tex(f2), slats: tex(s), screen: tex(t), mural: tex(mu), sign: tex(sg), board: tex(wb) };
   CACHE.screen.repeat.set(1, 1);
   return CACHE;
 }
@@ -98,7 +111,10 @@ export function shellMaterials() {
     frame: new THREE.MeshStandardMaterial({ color: '#18283D', roughness: 0.45, metalness: 0.35 }),
     glass: new THREE.MeshStandardMaterial({ color: '#8FB3D6', emissive: '#4A7AA8', emissiveIntensity: 0.5, roughness: 0.08, metalness: 0.25, envMapIntensity: 1.6 }),
     screen: new THREE.MeshBasicMaterial({ map: T.screen }),
-    cove: new THREE.MeshBasicMaterial({ color: '#E8B878' }),
+    cove: new THREE.MeshBasicMaterial({ color: '#FFD08A' }),
+    coveCore: new THREE.MeshBasicMaterial({ color: '#FFF4DC' }),
+    coveGlow: new THREE.MeshBasicMaterial({ map: glowTexture(), color: '#FFC27A', transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending }),
+    boardFace: new THREE.MeshStandardMaterial({ map: T.board, roughness: 0.25, metalness: 0.0, envMapIntensity: 0.4 }),
     pot: new THREE.MeshStandardMaterial({ color: '#263C55', roughness: 0.6 }),
     leaf: new THREE.MeshStandardMaterial({ color: '#6E9C85', roughness: 0.7 }),
   };
@@ -125,6 +141,28 @@ function plantGeos() {
 function shelfLayout(b, A) {
   const room = A.z0 - b.z0 - 1.0, n = room > 5 ? 3 : room > 3 ? 2 : 1;
   return Array.from({ length: n }, (_, i) => b.z0 + 1.3 + i * (room - 1.3) / Math.max(1, n - 0.4) + 0.4);
+}
+
+/** A standing whiteboard on an A-frame easel, facing +z at the origin of the returned group. */
+export function whiteboardStand(SM, own, { w = 1.5, h = 1.0, seed = 1 } = {}) {
+  const g = new THREE.Group();
+  const add = (geo, mat, x, y, z, rx = 0, rz = 0, cast = true) => {
+    own.push(geo); const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, 0, rz); m.castShadow = cast; m.receiveShadow = true; g.add(m); return m;
+  };
+  const top = 1.05 + h, y0 = 1.05 + h / 2;                       // board floats on the frame, centre height
+  add(new THREE.BoxGeometry(w + 0.06, h + 0.06, 0.04), SM.frame, 0, y0, 0);                         // frame
+  const face = add(new THREE.PlaneGeometry(w, h), SM.boardFace, 0, y0, 0.022, 0, 0, false);        // writable face
+  face.material = SM.boardFace;
+  add(new THREE.BoxGeometry(w * 0.7, 0.025, 0.07), SM.frame, 0, 1.05 - 0.01, 0.06);                 // marker tray
+  for (const [i, c] of ['#C4553A', '#3F6FA8', '#2B303A'].entries()) add(new THREE.CylinderGeometry(0.011, 0.011, 0.12, 8), new THREE.MeshStandardMaterial({ color: c, roughness: 0.5 }), -w * 0.15 + i * 0.07, 1.05 + 0.014, 0.06, 0, Math.PI / 2);
+  // legs: two uprights at the front, one prop leg at the back (A-frame) + feet
+  for (const sx of [-1, 1]) {
+    add(new THREE.BoxGeometry(0.04, top - 0.1, 0.04), SM.frame, sx * (w / 2 - 0.12), (top - 0.1) / 2 + 0.02, -0.02);
+    add(new THREE.BoxGeometry(0.05, 0.03, 0.34), SM.frame, sx * (w / 2 - 0.12), 0.015, 0.04, 0, 0, false);
+  }
+  add(new THREE.BoxGeometry(0.035, 1.55, 0.035), SM.frame, 0, 0.74, -0.3, 0.22, 0);
+  add(new THREE.BoxGeometry(w - 0.2, 0.03, 0.03), SM.frame, 0, 0.45, -0.02, 0, 0, false);            // cross-brace
+  return g;
 }
 
 /** A bookcase / credenza facing +z at the origin of the returned group. */
@@ -253,6 +291,13 @@ export function buildShell(b, SM, A) {
     const geo = new THREE.BoxGeometry(bw, bh, bd); own.push(geo);
     const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.receiveShadow = true; m.castShadow = cast; g.add(m); return m;
   };
+  // wall neon: thick warm tube, white-hot core, and a soft additive wash spilling down the wall
+  const neon = (len, x, z0, up = 0) => {
+    box(len, 0.07, 0.05, SM.cove, x, H - 0.14 + up, z0 + 0.035);
+    box(len, 0.03, 0.055, SM.coveCore, x, H - 0.14 + up, z0 + 0.038);
+    const gg = new THREE.PlaneGeometry(len + 0.8, 1.5); own.push(gg);
+    const gm = new THREE.Mesh(gg, SM.coveGlow); gm.position.set(x, H - 0.55 + up, z0 + 0.075); gm.renderOrder = 5; g.add(gm);
+  };
   const cloneTex = (t, rx, ry) => { const c = t.clone(); c.needsUpdate = true; c.repeat.set(rx, ry); own.push(c); return c; };
   const floorOf = (rect, base, name) => {
     const rw = rect.x1 - rect.x0, rd = rect.z1 - rect.z0;
@@ -274,7 +319,7 @@ export function buildShell(b, SM, A) {
   box(w, 0.14, 0.03, SM.base, cx, 0.07, b.z0 + 0.015);
   box(0.03, 0.14, d, SM.base, b.x0 + 0.015, 0.07, cz);
   box(0.03, 0.14, pd, SM.base, b.x1 - 0.015, 0.07, pz);
-  box(w - 0.4, 0.035, 0.04, SM.cove, cx, H - 0.14, b.z0 + 0.03);
+  neon(w - 0.4, cx, b.z0);
   // soft ambient-occlusion: dark gradient strips where the floor meets the walls
   const aoTex = (() => { const c = canvas(8, 64), x = c.getContext('2d'), gr = x.createLinearGradient(0, 0, 0, 64); gr.addColorStop(0, 'rgba(10,18,30,0.5)'); gr.addColorStop(1, 'rgba(10,18,30,0)'); x.fillStyle = gr; x.fillRect(0, 0, 8, 64); const t = new THREE.CanvasTexture(c); own.push(t); return t; })();
   const aoMat = new THREE.MeshBasicMaterial({ map: aoTex, transparent: true, depthWrite: false }); own.push(aoMat);
@@ -308,12 +353,12 @@ export function buildShell(b, SM, A) {
   box(0.24, 0.06, ad + 0.24, SM.trim, A.x1 + 0.08, H + 0.03, (A.z0 + A.z1) / 2);
   box(aw, 0.14, 0.03, SM.base, acx, 0.07, A.z0 + 0.015);
   box(0.03, 0.14, ad, SM.base, A.x1 - 0.015, 0.07, (A.z0 + A.z1) / 2);
-  box(aw - 0.2, 0.035, 0.04, SM.cove, acx, H - 0.14, A.z0 + 0.03);
+  neon(aw - 0.2, acx, A.z0, 0.1);   // raised so it clears the Dining & Café sign
   const mg = new THREE.PlaneGeometry(2.9, 1.3); own.push(mg);
-  box(3.0, 1.4, 0.03, SM.frame, acx, 1.95, A.z0 + 0.03);
-  const mm = new THREE.Mesh(mg, SM.mural); mm.position.set(acx, 1.95, A.z0 + 0.052); g.add(mm);
+  box(3.0, 1.4, 0.03, SM.frame, acx, 1.85, A.z0 + 0.03);
+  const mm = new THREE.Mesh(mg, SM.mural); mm.position.set(acx, 1.85, A.z0 + 0.052); g.add(mm);
   const sgeo = new THREE.PlaneGeometry(1.1, 0.275); own.push(sgeo);
-  const sgn = new THREE.Mesh(sgeo, SM.sign); sgn.position.set(acx, 2.82, A.z0 + 0.04); g.add(sgn);
+  const sgn = new THREE.Mesh(sgeo, SM.sign); sgn.position.set(acx, 2.7, A.z0 + 0.04); sgn.renderOrder = 7; g.add(sgn);   // renderOrder: draw above the neon glow wash
   // curtain across the first part of the opening (a darker drape + folds)
   const cl = 1.5;
   box(0.1, H - 0.1, cl, SM.drape, A.x0, (H - 0.1) / 2, A.z0 + cl / 2 + 0.02);
@@ -353,7 +398,16 @@ export function buildShell(b, SM, A) {
   plant(b.x0 + 0.45, b.z1 - 0.6, 0.95);
   plant(b.x1 - 0.5, b.z1 - 0.7, 1.0);
   plant(A.x1 - 0.45, A.z1 - 0.55, 1.1);
-  return { group: g, own, wins, sway };
+
+  // standing whiteboards in the margin by the window wall, angled slightly into the room
+  const obstacles = [];
+  const wbZs = d > 7 ? [cz - d * 0.22, cz + d * 0.22] : [cz];
+  wbZs.forEach((zz, i) => {
+    const wb = whiteboardStand(SM, own, { w: 1.5, h: 1.0 });
+    wb.position.set(b.x0 + 0.62, 0, zz); wb.rotation.y = Math.PI / 2 - 0.35 * (i % 2 ? -1 : 1) * 0.6; g.add(wb);
+    obstacles.push({ x0: b.x0 + 0.2, x1: b.x0 + 1.1, z0: zz - 0.95, z1: zz + 0.95 });
+  });
+  return { group: g, own, wins, sway, obstacles };
 }
 
 

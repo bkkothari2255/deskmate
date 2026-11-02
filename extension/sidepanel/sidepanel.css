@@ -230,3 +230,15 @@ button.chip:hover { background: var(--surface-2); border-color: var(--line-stron
 @media (prefers-color-scheme: dark) { .stage .reset-view { background: rgba(32,40,54,.78); color: #E6ECF5; border-color: rgba(160,175,200,.3); } .stage .reset-view:hover { background: rgba(44,54,72,.95); } }
 
 .stage .reset-view[hidden] { display: none; }
+
+/* "i" button: how to move around the 3D office */
+.stage .info-btn { position: absolute; top: 8px; left: 8px; z-index: 4; width: 26px; height: 26px; padding: 0; border-radius: 50%; border: 1px solid rgba(120,130,150,.35); background: rgba(255,255,255,.78); color: #243044; font: italic 700 14px/1 Georgia, "Times New Roman", serif; backdrop-filter: blur(8px); cursor: pointer; box-shadow: 0 2px 8px rgba(20,30,50,.12); }
+.stage .info-btn:hover, .stage .info-btn[aria-expanded="true"] { background: #fff; }
+.stage .info-btn:focus-visible { outline: 2px solid #6FA2FF; outline-offset: 2px; }
+.stage .view-info { position: absolute; top: 40px; left: 8px; z-index: 4; width: min(270px, calc(100% - 16px)); padding: 12px 14px; font-size: 12px; line-height: 1.35; background: var(--glass-strong); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: 0 8px 24px rgba(20,30,50,.18); }
+.stage .view-info[hidden] { display: none; }
+.view-info .vi-title { font-weight: 700; margin-bottom: 8px; }
+.view-info ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.view-info li { display: grid; grid-template-columns: 92px 1fr; gap: 8px; }
+.view-info li span { color: var(--muted); }
+@media (prefers-color-scheme: dark) { .stage .info-btn { background: rgba(32,40,54,.78); color: #E6ECF5; border-color: rgba(160,175,200,.3); } .stage .info-btn:hover, .stage .info-btn[aria-expanded="true"] { background: rgba(44,54,72,.95); } }
